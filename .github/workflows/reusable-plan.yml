@@ -1,0 +1,107 @@
+name: Reusable Agent Plan
+
+on:
+  workflow_call:
+    inputs:
+      agent_repository:
+        description: Repository that contains the reusable agent.
+        required: false
+        type: string
+        default: Realrubr2/opencode-agent
+      agent_ref:
+        description: Branch, tag, or SHA of the reusable agent repository.
+        required: false
+        type: string
+        default: main
+      allowed_associations:
+        description: Comma-separated GitHub author associations allowed to run the agent.
+        required: false
+        type: string
+        default: OWNER,MEMBER,COLLABORATOR
+    secrets:
+      OPENAI_API_KEY:
+        required: true
+      LANGFUSE_PUBLIC_KEY:
+        required: false
+      LANGFUSE_SECRET_KEY:
+        required: false
+      LANGFUSE_HOST:
+        required: false
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+jobs:
+  plan:
+    if: >
+      (
+        !github.event.issue.pull_request &&
+        github.event.issue.body &&
+        (
+          contains(github.event.issue.body, '/agent plan') ||
+          contains(github.event.issue.body, '/codex plan')
+        )
+      ) ||
+      (
+        !github.event.issue.pull_request &&
+        github.event.comment.body &&
+        (
+          contains(github.event.comment.body, '/agent plan') ||
+          contains(github.event.comment.body, '/codex plan')
+        )
+      )
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+      LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+      LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
+      AGENT_ALLOWED_ASSOCIATIONS: ${{ inputs.allowed_associations }}
+    steps:
+      - name: Checkout target repository
+        uses: actions/checkout@v4
+
+      - name: Checkout reusable agent
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.agent_repository }}
+          ref: ${{ inputs.agent_ref }}
+          path: .agent
+
+      - name: Ignore reusable agent checkout
+        run: echo ".agent/" >> .git/info/exclude
+
+      - name: Install bundled skills
+        run: |
+          mkdir -p "$HOME/.codex/skills"
+          cp -R .agent/skills/code-review "$HOME/.codex/skills/code-review"
+          cp -R .agent/skills/control-ui "$HOME/.codex/skills/control-ui"
+          cp -R .agent/skills/mise-typescript-starter "$HOME/.codex/skills/mise-typescript-starter"
+
+      - name: Prepare planning prompt
+        id: prepare
+        run: node .agent/src/agent-glue.mjs prepare-plan
+
+      - name: Trace plan start
+        run: node .agent/src/agent-glue.mjs trace plan_start ok
+
+      - name: Run Codex planner
+        uses: openai/codex-action@main
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt: ${{ steps.prepare.outputs.prompt }}
+          sandbox: workspace-write
+          output-file: .agent/out/plan.md
+
+      - name: Post implementation plan
+        env:
+          PLAN_ID: ${{ steps.prepare.outputs.plan_id }}
+        run: node .agent/src/agent-glue.mjs post-plan
+
+      - name: Trace plan result
+        if: always()
+        run: node .agent/src/agent-glue.mjs trace plan_result ${{ job.status }}

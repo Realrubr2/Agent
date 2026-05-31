@@ -1,0 +1,17 @@
+name: Agent Plan
+
+on:
+  issues:
+    types: [opened]
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+  issues: write
+  actions: read
+
+jobs:
+  plan:
+    uses: Realrubr2/opencode-agent/.github/workflows/reusable-plan.yml@main
+    secrets: inherit

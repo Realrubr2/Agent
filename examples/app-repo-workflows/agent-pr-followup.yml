@@ -1,0 +1,16 @@
+name: Agent PR Follow-up
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  followup:
+    uses: Realrubr2/opencode-agent/.github/workflows/reusable-pr-followup.yml@main
+    secrets: inherit

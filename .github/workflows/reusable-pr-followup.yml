@@ -1,0 +1,128 @@
+name: Reusable Agent PR Follow-up
+
+on:
+  workflow_call:
+    inputs:
+      agent_repository:
+        description: Repository that contains the reusable agent.
+        required: false
+        type: string
+        default: Realrubr2/opencode-agent
+      agent_ref:
+        description: Branch, tag, or SHA of the reusable agent repository.
+        required: false
+        type: string
+        default: main
+      allowed_associations:
+        description: Comma-separated GitHub author associations allowed to run the agent.
+        required: false
+        type: string
+        default: OWNER,MEMBER,COLLABORATOR
+    secrets:
+      OPENAI_API_KEY:
+        required: true
+      LANGFUSE_PUBLIC_KEY:
+        required: false
+      LANGFUSE_SECRET_KEY:
+        required: false
+      LANGFUSE_HOST:
+        required: false
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+  actions: read
+
+jobs:
+  followup:
+    if: >
+      github.event.issue.pull_request &&
+      github.event.comment.body &&
+      (
+        contains(github.event.comment.body, '/agent improve') ||
+        contains(github.event.comment.body, '/codex improve')
+      )
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GITHUB_TOKEN: ${{ github.token }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
+      LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
+      LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
+      AGENT_ALLOWED_ASSOCIATIONS: ${{ inputs.allowed_associations }}
+    steps:
+      - name: Resolve PR branch
+        id: branch
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.issue.number,
+            });
+            if (pr.data.head.repo.full_name !== `${context.repo.owner}/${context.repo.repo}`) {
+              core.setFailed("Refusing to update a pull request branch from a fork.");
+              return;
+            }
+            core.setOutput("head_ref", pr.data.head.ref);
+
+      - name: Checkout target PR branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.branch.outputs.head_ref }}
+          fetch-depth: 0
+
+      - name: Checkout reusable agent
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.agent_repository }}
+          ref: ${{ inputs.agent_ref }}
+          path: .agent
+
+      - name: Ignore reusable agent checkout
+        run: echo ".agent/" >> .git/info/exclude
+
+      - name: Install bundled skills
+        run: |
+          mkdir -p "$HOME/.codex/skills"
+          cp -R .agent/skills/code-review "$HOME/.codex/skills/code-review"
+          cp -R .agent/skills/control-ui "$HOME/.codex/skills/control-ui"
+          cp -R .agent/skills/mise-typescript-starter "$HOME/.codex/skills/mise-typescript-starter"
+
+      - name: Prepare Codex prompt
+        id: prompt
+        run: node .agent/src/agent-glue.mjs prepare-followup
+
+      - name: Trace follow-up start
+        run: node .agent/src/agent-glue.mjs trace followup_start ok
+
+      - name: Run Codex follow-up
+        uses: openai/codex-action@main
+        with:
+          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          prompt: ${{ steps.prompt.outputs.prompt }}
+          sandbox: workspace-write
+          output-file: .agent/out/followup-verification.md
+
+      - name: Commit and push follow-up changes
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No follow-up changes to commit."
+          else
+            git commit -m "chore(agent): apply PR follow-up"
+            git push origin HEAD:${{ steps.branch.outputs.head_ref }}
+          fi
+
+      - name: Post follow-up status
+        if: always()
+        run: node .agent/src/agent-glue.mjs post-followup
+
+      - name: Trace follow-up result
+        if: always()
+        run: node .agent/src/agent-glue.mjs trace followup_result ${{ job.status }}
