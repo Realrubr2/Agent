@@ -93,7 +93,7 @@ jobs:
         with:
           model: ${{ env.provider_model }}
           prompt: ${{ steps.prepare.outputs.prompt }}
-          token: ${{ github.token }}
+          use_github_token: true
 
       - name: Build PR body
         id: pr_body

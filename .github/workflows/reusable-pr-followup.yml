@@ -110,7 +110,7 @@ jobs:
         with:
           model: ${{ env.provider_model }}
           prompt: ${{ steps.prompt.outputs.prompt }}
-          token: ${{ github.token }}
+          use_github_token: true
 
       - name: Commit and push follow-up changes
         run: |
