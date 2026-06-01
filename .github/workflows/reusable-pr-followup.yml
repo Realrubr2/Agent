@@ -7,7 +7,7 @@ on:
         description: Repository that contains the reusable agent.
         required: false
         type: string
-        default: realrubr/Agent
+        default: realrubr2/Agent
       agent_ref:
         description: Branch, tag, or SHA of the reusable agent repository.
         required: false
