@@ -12,5 +12,5 @@ permissions:
 
 jobs:
   followup:
-    uses: realrubr/Agent/.github/workflows/reusable-pr-followup.yml@main
+    uses: realrubr2/Agent/.github/workflows/reusable-pr-followup.yml@main
     secrets: inherit
