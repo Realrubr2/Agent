@@ -41,7 +41,7 @@ jobs:
         github.event.issue.body &&
         (
           contains(github.event.issue.body, '/agent plan') ||
-          contains(github.event.issue.body, '/codex plan')
+          contains(github.event.issue.body, '/opencode plan')
         )
       ) ||
       (
@@ -49,7 +49,7 @@ jobs:
         github.event.comment.body &&
         (
           contains(github.event.comment.body, '/agent plan') ||
-          contains(github.event.comment.body, '/codex plan')
+          contains(github.event.comment.body, '/opencode plan')
         )
       )
     runs-on: ubuntu-latest
@@ -61,6 +61,7 @@ jobs:
       LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
       LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
       AGENT_ALLOWED_ASSOCIATIONS: ${{ inputs.allowed_associations }}
+      provider_model: ${{ vars.provider_model }}
     steps:
       - name: Checkout target repository
         uses: actions/checkout@v4
@@ -77,10 +78,10 @@ jobs:
 
       - name: Install bundled skills
         run: |
-          mkdir -p "$HOME/.codex/skills"
-          cp -R .agent/skills/code-review "$HOME/.codex/skills/code-review"
-          cp -R .agent/skills/control-ui "$HOME/.codex/skills/control-ui"
-          cp -R .agent/skills/mise-typescript-starter "$HOME/.codex/skills/mise-typescript-starter"
+          mkdir -p "$HOME/.opencode/skills"
+          cp -R .agent/skills/code-review "$HOME/.opencode/skills/code-review"
+          cp -R .agent/skills/control-ui "$HOME/.opencode/skills/control-ui"
+          cp -R .agent/skills/mise-typescript-starter "$HOME/.opencode/skills/mise-typescript-starter"
 
       - name: Prepare planning prompt
         id: prepare
@@ -89,10 +90,11 @@ jobs:
       - name: Trace plan start
         run: node .agent/src/agent-glue.mjs trace plan_start ok
 
-      - name: Run Codex planner
+      - name: Run Opencode planner
         uses: openai/codex-action@main
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          model: ${{ env.provider_model }}
           prompt: ${{ steps.prepare.outputs.prompt }}
           sandbox: workspace-write
           output-file: .agent/out/plan.md

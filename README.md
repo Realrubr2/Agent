@@ -1,4 +1,4 @@
-# Reusable GitHub Codex Agent
+# Reusable GitHub Opencode Agent
 
 This repository is the central agent repo. It owns the reusable GitHub Actions workflows, the glue script, and the bundled skills.
 
@@ -6,7 +6,7 @@ Each application repository only needs tiny workflow stubs plus secrets.
 
 ## What This Agent Does
 
-- `/agent plan` or `/codex plan` on an issue creates an implementation plan comment.
+- `/agent plan` or `/opencode plan` on an issue creates an implementation plan comment.
 - `/agent approve` or `/codex approve` on that issue runs Codex, commits the implementation to a branch, and opens a pull request.
 - `/agent improve <request>` or `/codex improve <request>` on the pull request updates the PR branch.
 
@@ -55,10 +55,10 @@ The app repo should end up with:
 By default the example stubs call:
 
 ```yaml
-uses: Realrubr2/opencode-agent/.github/workflows/reusable-plan.yml@main
+uses: Realrubr2/agent/.github/workflows/reusable-plan.yml@main
 ```
 
-If the central repo is named differently, replace `Realrubr2/opencode-agent` in all three app workflow stubs.
+If the central repo is named differently, replace `Realrubr2/agent` in all three app workflow stubs.
 
 ## Required Secrets
 
@@ -70,6 +70,12 @@ Add these secrets to every app repo that will use the agent:
 - `LANGFUSE_HOST` optional, defaults to Langfuse Cloud behavior in the glue script
 
 The workflow uses GitHub's built-in `GITHUB_TOKEN` for comments, labels, branches, and pull requests.
+
+## Required Variables
+
+Add this repository variable to every app repo that will use the plan workflow:
+
+- `provider_model` model identifier used by the planner action (for example `gpt-5`).
 
 ## Permissions
 
@@ -96,7 +102,7 @@ To override that per app repo, pass `allowed_associations` from a stub:
 ```yaml
 jobs:
   plan:
-    uses: Realrubr2/opencode-agent/.github/workflows/reusable-plan.yml@main
+    uses: Realrubr2/agent/.github/workflows/reusable-plan.yml@main
     with:
       allowed_associations: OWNER,MEMBER,COLLABORATOR
     secrets: inherit
@@ -109,7 +115,7 @@ Keep this strict for public repositories because the agent can spend API credits
 For stability, replace `@main` in app repo workflow stubs with a tag:
 
 ```yaml
-uses: Realrubr2/opencode-agent/.github/workflows/reusable-plan.yml@v0.1.0
+uses: Realrubr2/agent/.github/workflows/reusable-plan.yml@v0.1.0
 ```
 
 Then release new central-agent versions by tagging this repo.
@@ -134,12 +140,12 @@ On the generated PR:
 /agent improve make the tests cover the empty state too
 ```
 
-Aliases with `/codex` also work:
+Aliases with `/opencode` also work:
 
 ```text
-/codex plan
-/codex approve
-/codex improve ...
+/opencode plan
+/opencode approve
+/opencode improve ...
 ```
 
 ## Local Check
