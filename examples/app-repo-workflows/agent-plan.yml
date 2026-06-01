@@ -13,5 +13,5 @@ permissions:
 
 jobs:
   plan:
-    uses: Realrubr2/opencode-agent/.github/workflows/reusable-plan.yml@main
+    uses: realrubr/Agent/.github/workflows/reusable-plan.yml@main
     secrets: inherit

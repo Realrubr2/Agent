@@ -55,10 +55,10 @@ The app repo should end up with:
 By default the example stubs call:
 
 ```yaml
-uses: Realrubr2/agent/.github/workflows/reusable-plan.yml@main
+uses: realrubr/Agent/.github/workflows/reusable-plan.yml@main
 ```
 
-If the central repo is named differently, replace `Realrubr2/agent` in all three app workflow stubs.
+If the central repo is named differently, replace `realrubr/Agent` in all three app workflow stubs.
 
 ## Required Secrets
 
@@ -102,7 +102,7 @@ To override that per app repo, pass `allowed_associations` from a stub:
 ```yaml
 jobs:
   plan:
-    uses: Realrubr2/agent/.github/workflows/reusable-plan.yml@main
+    uses: realrubr/Agent/.github/workflows/reusable-plan.yml@main
     with:
       allowed_associations: OWNER,MEMBER,COLLABORATOR
     secrets: inherit
@@ -115,7 +115,7 @@ Keep this strict for public repositories because the agent can spend API credits
 For stability, replace `@main` in app repo workflow stubs with a tag:
 
 ```yaml
-uses: Realrubr2/agent/.github/workflows/reusable-plan.yml@v0.1.0
+uses: realrubr/Agent/.github/workflows/reusable-plan.yml@v0.1.0
 ```
 
 Then release new central-agent versions by tagging this repo.
