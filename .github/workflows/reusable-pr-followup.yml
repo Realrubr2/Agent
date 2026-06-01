@@ -7,7 +7,7 @@ on:
         description: Repository that contains the reusable agent.
         required: false
         type: string
-        default: Realrubr2/opencode-agent
+        default: realrubr/Agent
       agent_ref:
         description: Branch, tag, or SHA of the reusable agent repository.
         required: false
@@ -29,6 +29,7 @@ on:
         required: false
 
 permissions:
+  id-token: write
   contents: write
   issues: write
   pull-requests: write
@@ -41,7 +42,7 @@ jobs:
       github.event.comment.body &&
       (
         contains(github.event.comment.body, '/agent improve') ||
-        contains(github.event.comment.body, '/codex improve')
+        contains(github.event.comment.body, '/opencode improve')
       )
     runs-on: ubuntu-latest
     env:
@@ -52,6 +53,7 @@ jobs:
       LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
       LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST }}
       AGENT_ALLOWED_ASSOCIATIONS: ${{ inputs.allowed_associations }}
+      provider_model: ${{ vars.provider_model }}
     steps:
       - name: Resolve PR branch
         id: branch
@@ -87,25 +89,28 @@ jobs:
 
       - name: Install bundled skills
         run: |
-          mkdir -p "$HOME/.codex/skills"
-          cp -R .agent/skills/code-review "$HOME/.codex/skills/code-review"
-          cp -R .agent/skills/control-ui "$HOME/.codex/skills/control-ui"
-          cp -R .agent/skills/mise-typescript-starter "$HOME/.codex/skills/mise-typescript-starter"
+          mkdir -p "$HOME/.opencode/skills"
+          cp -R .agent/skills/code-review "$HOME/.opencode/skills/code-review"
+          cp -R .agent/skills/control-ui "$HOME/.opencode/skills/control-ui"
+          cp -R .agent/skills/mise-typescript-starter "$HOME/.opencode/skills/mise-typescript-starter"
 
-      - name: Prepare Codex prompt
+      - name: Prepare Opencode prompt
         id: prompt
         run: node .agent/src/agent-glue.mjs prepare-followup
 
       - name: Trace follow-up start
         run: node .agent/src/agent-glue.mjs trace followup_start ok
 
-      - name: Run Codex follow-up
-        uses: openai/codex-action@main
+      - name: Run Opencode follow-up
+        uses: anomalyco/opencode/github@latest
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
         with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          model: ${{ env.provider_model }}
           prompt: ${{ steps.prompt.outputs.prompt }}
-          sandbox: workspace-write
-          output-file: .agent/out/followup-verification.md
+          token: ${{ github.token }}
 
       - name: Commit and push follow-up changes
         run: |

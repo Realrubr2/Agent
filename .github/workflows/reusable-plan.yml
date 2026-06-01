@@ -7,7 +7,7 @@ on:
         description: Repository that contains the reusable agent.
         required: false
         type: string
-        default: realrubr2/Agent
+        default: realrubr/Agent
       agent_ref:
         description: Branch, tag, or SHA of the reusable agent repository.
         required: false
@@ -29,6 +29,7 @@ on:
         required: false
 
 permissions:
+  id-token: write
   contents: read
   issues: write
   actions: read
@@ -91,13 +92,15 @@ jobs:
         run: node .agent/src/agent-glue.mjs trace plan_start ok
 
       - name: Run Opencode planner
-        uses: openai/codex-action@main
+        uses: anomalyco/opencode/github@latest
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          GITHUB_TOKEN: ${{ github.token }}
         with:
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
           model: ${{ env.provider_model }}
           prompt: ${{ steps.prepare.outputs.prompt }}
-          sandbox: workspace-write
-          output-file: .agent/out/plan.md
+          token: ${{ github.token }}
 
       - name: Post implementation plan
         env:

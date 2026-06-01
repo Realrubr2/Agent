@@ -12,5 +12,5 @@ permissions:
 
 jobs:
   implement:
-    uses: realrubr2/Agent/.github/workflows/reusable-implement.yml@main
+    uses: realrubr/Agent/.github/workflows/reusable-implement.yml@main
     secrets: inherit

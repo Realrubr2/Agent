@@ -6,7 +6,7 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-const COMMAND_PATTERN = /\/(agent|codex)\s+(plan|approve|improve)\b([\s\S]*)?/i;
+const COMMAND_PATTERN = /\/(agent|opencode)\s+(plan|approve|improve)\b([\s\S]*)?/i;
 const PLAN_MARKER = "<!-- agent-plan:";
 const AGENT_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const REPO_ROOT = path.resolve(AGENT_ROOT, "..");
@@ -43,7 +43,7 @@ function preparePlan() {
   const sourceText = event.comment?.body ?? issue.body ?? "";
   const parsed = parseCommand(sourceText);
   if (!parsed || parsed.action !== "plan") {
-    throw new Error("No /agent plan or /codex plan command found.");
+    throw new Error("No /agent plan or /opencode plan command found.");
   }
 
   const planId = idFrom(`${issue.number}:${process.env.GITHUB_RUN_ID}:${Date.now()}`).slice(0, 12);
@@ -84,7 +84,7 @@ function postPlan() {
   const issue = event.issue;
   assertIssue(issue, "post plan");
 
-  const plan = readOptional("plan.md") || "Codex finished, but no plan file was produced. Please rerun `/agent plan`.";
+  const plan = readOptional("plan.md") || "Agent run finished, but no plan file was produced. Please rerun `/agent plan`.";
   const planId = process.env.PLAN_ID || idFrom(`${issue.number}:${process.env.GITHUB_RUN_ID}`).slice(0, 12);
   const body = [
     `## Agent Implementation Plan`,
@@ -113,7 +113,7 @@ function prepareImplement() {
 
   const parsed = parseCommand(event.comment?.body ?? "");
   if (!parsed || parsed.action !== "approve") {
-    throw new Error("No /agent approve or /codex approve command found.");
+    throw new Error("No /agent approve or /opencode approve command found.");
   }
 
   const currentLabels = (issue.labels || []).map((label) => typeof label === "string" ? label : label.name);
@@ -164,7 +164,7 @@ function buildPrBody() {
   const event = readEvent();
   const issue = event.issue;
   assertIssue(issue, "PR body");
-  const verification = readOptional("verification.md") || "Verification summary was not produced by Codex.";
+  const verification = readOptional("verification.md") || "Verification summary was not produced by the agent.";
   const body = [
     `Closes #${issue.number}`,
     "",
@@ -206,7 +206,7 @@ function prepareFollowup() {
 
   const parsed = parseCommand(event.comment?.body ?? "");
   if (!parsed || parsed.action !== "improve") {
-    throw new Error("No /agent improve or /codex improve command found.");
+    throw new Error("No /agent improve or /opencode improve command found.");
   }
 
   const pr = ghJson("api", `repos/${repo()}/pulls/${issue.number}`);
@@ -263,7 +263,7 @@ async function trace(stage, status) {
   const payload = {
     resourceSpans: [{
       resource: { attributes: otelAttributes({
-        "service.name": "github-codex-agent",
+        "service.name": "github-opencode-agent",
         "deployment.environment": "github-actions",
       }) },
       scopeSpans: [{
@@ -279,7 +279,7 @@ async function trace(stage, status) {
           attributes: otelAttributes({
             "langfuse.trace.name": "GitHub Issue-to-PR Agent",
             "langfuse.session.id": process.env.GITHUB_RUN_ID || "local",
-            "langfuse.trace.tags": "github-actions,codex-agent",
+            "langfuse.trace.tags": "github-actions,opencode-agent",
             "github.repository": process.env.GITHUB_REPOSITORY || "",
             "github.workflow": process.env.GITHUB_WORKFLOW || "",
             "github.run_id": process.env.GITHUB_RUN_ID || "",

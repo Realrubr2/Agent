@@ -7,10 +7,10 @@ Each application repository only needs tiny workflow stubs plus secrets.
 ## What This Agent Does
 
 - `/agent plan` or `/opencode plan` on an issue creates an implementation plan comment.
-- `/agent approve` or `/codex approve` on that issue runs Codex, commits the implementation to a branch, and opens a pull request.
-- `/agent improve <request>` or `/codex improve <request>` on the pull request updates the PR branch.
+- `/agent approve` or `/opencode approve` on that issue runs the agent, commits the implementation to a branch, and opens a pull request.
+- `/agent improve <request>` or `/opencode improve <request>` on the pull request updates the PR branch.
 
-The reusable workflows install these bundled skills into the runner before Codex runs:
+The reusable workflows install these bundled skills into the runner before the agent runs:
 
 - `mise-typescript-starter` for new TypeScript project creation and implementation work.
 - `code-review` for PR review, review feedback, and maintainability passes.
@@ -55,10 +55,10 @@ The app repo should end up with:
 By default the example stubs call:
 
 ```yaml
-uses: realrubr2/Agent/.github/workflows/reusable-plan.yml@main
+uses: realrubr/Agent/.github/workflows/reusable-plan.yml@main
 ```
 
-If the central repo is named differently, replace `realrubr2/Agent` in all three app workflow stubs.
+If the central repo is named differently, replace `realrubr/Agent` in all three app workflow stubs.
 
 ## Required Secrets
 
@@ -73,9 +73,9 @@ The workflow uses GitHub's built-in `GITHUB_TOKEN` for comments, labels, branche
 
 ## Required Variables
 
-Add this repository variable to every app repo that will use the plan workflow:
+Add these repository variables to every app repo:
 
-- `provider_model` model identifier used by the planner action (for example `gpt-5`).
+- `provider_model` model identifier used by the action (for example `openrouter/z-ai/glm-4.7-flash`).
 
 ## Permissions
 
@@ -102,7 +102,7 @@ To override that per app repo, pass `allowed_associations` from a stub:
 ```yaml
 jobs:
   plan:
-    uses: realrubr2/Agent/.github/workflows/reusable-plan.yml@main
+    uses: realrubr/Agent/.github/workflows/reusable-plan.yml@main
     with:
       allowed_associations: OWNER,MEMBER,COLLABORATOR
     secrets: inherit
@@ -115,7 +115,7 @@ Keep this strict for public repositories because the agent can spend API credits
 For stability, replace `@main` in app repo workflow stubs with a tag:
 
 ```yaml
-uses: realrubr2/Agent/.github/workflows/reusable-plan.yml@v0.1.0
+uses: realrubr/Agent/.github/workflows/reusable-plan.yml@v0.1.0
 ```
 
 Then release new central-agent versions by tagging this repo.
