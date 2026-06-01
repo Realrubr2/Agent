@@ -81,6 +81,7 @@ Add these repository variables to every app repo:
 
 The app workflow stubs include the required permissions:
 
+- `id-token: write` required by the OpenCode GitHub action.
 - `contents: read` for planning.
 - `contents: write` for implementation and PR follow-up.
 - `issues: write` for issue comments and labels.
