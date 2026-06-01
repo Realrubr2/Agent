@@ -18,7 +18,7 @@ const REQUIRED_SKILLS = [
   "control-ui for frontend verification, browser checks, and screenshots",
 ];
 
-function main() {
+async function main() {
   const command = process.argv[2];
   ensureOutDir();
 
@@ -29,7 +29,7 @@ function main() {
   if (command === "post-implementation") return postImplementation();
   if (command === "prepare-followup") return prepareFollowup();
   if (command === "post-followup") return postFollowup();
-  if (command === "trace") return trace(process.argv[3] ?? "unknown", process.argv[4] ?? "ok");
+  if (command === "trace") return await trace(process.argv[3] ?? "unknown", process.argv[4] ?? "ok");
 
   throw new Error(`Unknown command: ${command}`);
 }
@@ -446,4 +446,7 @@ function postJson(url, payload, headers) {
   });
 }
 
-main();
+main().catch((error) => {
+  console.error(error?.stack || String(error));
+  process.exit(1);
+});
