@@ -17,6 +17,11 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
 
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
 jobs:
   agent-comment:
     if: github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment'
