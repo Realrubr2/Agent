@@ -2197,7 +2197,7 @@ async function main() {
   await withSpan("workspace branch setup", () => prepareWorkspaceBranch(context.workspace, publishTarget));
   const prompt = await withSpan("GitHub context loading", () => buildPrompt(context, inputs, mode, github));
   if (isUserEvent(context.eventName)) {
-    await withSpan("permission check", () => assertWritePermission(github, context.actor));
+    await withSpan("permission check", () => assertTrustedInvocation(context));
   }
   await withSpan("acknowledgement comment", () => acknowledgeInvocation(context, github));
   const skills = await withSpan("skill loading", () => loadSkills(inputs.skills, context.workspace));
@@ -2481,10 +2481,13 @@ function isUserEvent(eventName) {
 function getIssueNumber(context) {
   return context.event.issue?.number || context.event.pull_request?.number;
 }
-async function assertWritePermission(github, actor) {
-  const permission = await github.permission(actor);
-  if (!["admin", "write"].includes(permission))
-    throw new Error(`User ${actor} does not have write permissions`);
+async function assertTrustedInvocation(context) {
+  if (context.eventName === "pull_request")
+    return;
+  const association = context.event.comment?.author_association || context.event.issue?.author_association;
+  if (["OWNER", "MEMBER", "COLLABORATOR"].includes(association))
+    return;
+  throw new Error(`User ${context.actor} is not allowed to invoke the agent. Expected author association OWNER, MEMBER, or COLLABORATOR; got ${association || "unknown"}.`);
 }
 async function withSpan(name, fn) {
   const started2 = Date.now();
@@ -2511,10 +2514,6 @@ class GitHubClient {
     this.token = token;
     this.owner = owner;
     this.repo = repo;
-  }
-  async permission(actor) {
-    const data = await this.request(`/repos/${this.owner}/${this.repo}/collaborators/${actor}/permission`);
-    return data.permission;
   }
   async comment(issueNumber, body) {
     await this.request(`/repos/${this.owner}/${this.repo}/issues/${issueNumber}/comments`, {
@@ -2561,8 +2560,10 @@ class GitHubClient {
         ...init?.headers
       }
     });
-    if (!response.ok)
-      throw new Error(`GitHub API failed: ${response.status} ${response.statusText}`);
+    if (!response.ok) {
+      const body = await response.text().catch(() => "");
+      throw new Error(`GitHub API failed ${init?.method || "GET"} ${path2}: ${response.status} ${response.statusText}${body ? ` - ${body}` : ""}`);
+    }
     return await response.json();
   }
 }
