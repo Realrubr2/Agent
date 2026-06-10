@@ -120,6 +120,7 @@ async function main() {
   if (isUserEvent(context.eventName)) {
     await withSpan("permission check", () => assertWritePermission(github, context.actor));
   }
+  await withSpan("acknowledgement comment", () => acknowledgeInvocation(context, github));
   const skills = await withSpan("skill loading", () => loadSkills(inputs.skills, context.workspace));
   await langfuse.updateTrace("running", { skills: skills.map((skill) => skill.name) });
   const response = await withSpan("agent execution", () => runAgent(model, prompt, skills, inputs.telemetryIncludePrompts));
@@ -231,6 +232,16 @@ async function publishResult(context, github, response, diff) {
   if (diff.changed) {
     console.log("Files changed, but branch/PR publishing is intentionally left to the agent implementation adapter.");
   }
+}
+async function acknowledgeInvocation(context, github) {
+  if (!isUserEvent(context.eventName))
+    return;
+  const issueNumber = getIssueNumber(context);
+  if (!issueNumber)
+    return;
+  await github.comment(issueNumber, `Agent called. I'm taking a look now.
+
+[agent run](${context.runUrl})`);
 }
 async function readSkills(dir, source) {
   try {
