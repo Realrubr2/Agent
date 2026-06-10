@@ -25,7 +25,7 @@ on:
       agent_ref:
         type: string
         required: false
-        default: "v1"
+        default: ""
 
 jobs:
   agent:
@@ -46,7 +46,7 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           repository: ${{ github.repository_owner }}/Agent
-          ref: ${{ inputs.agent_ref }}
+          ref: ${{ inputs.agent_ref || github.workflow_sha }}
           path: .agent-action
           fetch-depth: 1
 
