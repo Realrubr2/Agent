@@ -53,6 +53,10 @@ describe("mode and model selection", () => {
 
   test("validates provider/model format", () => {
     expect(requireModel("openai/gpt-5")).toEqual({ provider: "openai", model: "gpt-5" })
+    expect(requireModel("openrouter/z-ai/glm-4.7-flash")).toEqual({
+      provider: "openrouter",
+      model: "z-ai/glm-4.7-flash",
+    })
     expect(() => requireModel("gpt-5")).toThrow("Expected provider/model")
   })
 })

@@ -19,18 +19,28 @@ jobs:
   agent:
     uses: Realrubr2/Agent/.github/workflows/agent-comment.yml@v1
     with:
-      model: anthropic/claude-sonnet-4-5
+      model: openrouter/openai/gpt-5.2
     secrets: inherit
 ```
 
-More copyable examples live in `agent/examples/workflows`.
+More copyable examples live in `examples/workflows`.
 
 ## Required organization secrets
 
 - `LANGFUSE_PUBLIC_KEY`
 - `LANGFUSE_SECRET_KEY`
 - `LANGFUSE_BASE_URL`
-- Provider key for the selected model, for example `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`
+- Provider key for the selected model, for example `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `OPENROUTER_API_KEY`
+
+For OpenRouter, create an API key in OpenRouter and save it as the GitHub organization secret `OPENROUTER_API_KEY`. Then use an OpenRouter model by prefixing the OpenRouter model slug with `openrouter/`:
+
+```yaml
+with:
+  model: openrouter/openai/gpt-5.2
+secrets: inherit
+```
+
+OpenRouter uses `https://openrouter.ai/api/v1` by default. Set `OPENROUTER_BASE_URL` only if you need to override that endpoint.
 
 ## Skills
 

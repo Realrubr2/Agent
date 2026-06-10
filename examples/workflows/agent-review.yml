@@ -8,6 +8,6 @@ jobs:
   agent:
     uses: Realrubr2/Agent/.github/workflows/agent-review.yml@v1
     with:
-      model: anthropic/claude-sonnet-4-5
-      review_model: anthropic/claude-opus-4-5
+      model: openrouter/openai/gpt-5.2
+      review_model: openrouter/openai/gpt-5.2
     secrets: inherit

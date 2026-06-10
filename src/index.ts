@@ -22,6 +22,9 @@ type Skill = {
 const started = Date.now()
 const traceId = crypto.randomUUID()
 let langfuse: LangfuseClient
+const OPENAI_COMPATIBLE_DEFAULT_BASE_URLS: Record<string, string> = {
+  openrouter: "https://openrouter.ai/api/v1",
+}
 
 async function main() {
   requireEnv(process.env, ["GITHUB_TOKEN", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_BASE_URL"])
@@ -387,10 +390,14 @@ async function callOpenAI(model: string, system: string, prompt: string) {
 }
 
 async function callOpenAICompatible(provider: string, model: string, system: string, prompt: string) {
-  const baseUrl = process.env[`${provider.toUpperCase().replace(/-/g, "_")}_BASE_URL`]
-  const apiKey = process.env[`${provider.toUpperCase().replace(/-/g, "_")}_API_KEY`]
-  if (!baseUrl || !apiKey) {
-    throw new Error(`Unsupported provider "${provider}". Set ${provider.toUpperCase()}_BASE_URL and ${provider.toUpperCase()}_API_KEY for OpenAI-compatible providers.`)
+  const envPrefix = provider.toUpperCase().replace(/-/g, "_")
+  const baseUrl = process.env[`${envPrefix}_BASE_URL`] || OPENAI_COMPATIBLE_DEFAULT_BASE_URLS[provider]
+  const apiKey = process.env[`${envPrefix}_API_KEY`]
+  if (!apiKey) {
+    throw new Error(`Missing required environment variables: ${envPrefix}_API_KEY`)
+  }
+  if (!baseUrl) {
+    throw new Error(`Unsupported provider "${provider}". Set ${envPrefix}_BASE_URL and ${envPrefix}_API_KEY for OpenAI-compatible providers.`)
   }
   return callChatCompletions(`${baseUrl.replace(/\/+$/, "")}/chat/completions`, apiKey, model, system, prompt)
 }
