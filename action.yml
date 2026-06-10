@@ -6,16 +6,16 @@ branding:
 
 inputs:
   model:
-    description: "Default model in provider/model format"
+    description: "Default OpenRouter model in openrouter/provider/model format"
     required: true
   review_model:
-    description: "Model for pull request review mode. Defaults to model."
+    description: "OpenRouter model for pull request review mode. Defaults to model."
     required: false
   schedule_model:
-    description: "Model for schedule and workflow_dispatch mode. Defaults to model."
+    description: "OpenRouter model for schedule and workflow_dispatch mode. Defaults to model."
     required: false
   triage_model:
-    description: "Model for issue triage mode. Defaults to model."
+    description: "OpenRouter model for issue triage mode. Defaults to model."
     required: false
   mode:
     description: "Explicit mode override"

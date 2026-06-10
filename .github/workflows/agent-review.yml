@@ -22,10 +22,20 @@ on:
         type: string
         required: false
         default: "false"
+    secrets:
+      OPENROUTER_API_KEY:
+        required: true
+      LANGFUSE_PUBLIC_KEY:
+        required: true
+      LANGFUSE_SECRET_KEY:
+        required: true
+      LANGFUSE_BASE_URL:
+        required: true
+      OPENROUTER_BASE_URL:
+        required: false
 jobs:
   agent:
     runs-on: ubuntu-latest
-    environment: agent
     permissions:
       contents: write
       issues: write
@@ -35,6 +45,9 @@ jobs:
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
           fetch-depth: 0
+
+      - name: Install OpenCode CLI
+        run: npm install --global opencode-ai@1.17.0
 
       - name: Run shared agent
         uses: Realrubr2/Agent@main
@@ -50,7 +63,5 @@ jobs:
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
           LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY }}
           LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BASE_URL }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_BASE_URL: ${{ secrets.OPENROUTER_BASE_URL }}

@@ -2,7 +2,9 @@
 
 This directory is a portable scaffold for a shared Agent repo.
 
-Target repos call reusable workflows from the shared repo and only pass model names. Provider keys and Langfuse credentials are centralized as environment secrets on the shared Agent repo.
+Target repos call reusable workflows from the shared repo and pass OpenRouter model names. The action runs OpenCode with OpenRouter, allowing it to edit files and run shell commands in the checked-out repository.
+
+GitHub does not expose this Agent repo's secrets to workflow runs in other repositories. Without a GitHub organization, add provider and telemetry secrets to each caller repo, then keep `secrets: inherit` in the caller workflow.
 
 ## Caller workflow
 
@@ -25,31 +27,35 @@ permissions:
 jobs:
   agent-comment:
     if: github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment'
-    uses: Realrubr2/Agent/.github/workflows/agent.yml@v1
+    uses: Realrubr2/Agent/.github/workflows/agent.yml@main
     with:
       model: openrouter/z-ai/glm-4.7-flash
       review_model: openrouter/z-ai/glm-4.7-flash
+    secrets: inherit
 
   agent-review:
     if: github.event_name == 'pull_request'
-    uses: Realrubr2/Agent/.github/workflows/agent.yml@v1
+    uses: Realrubr2/Agent/.github/workflows/agent.yml@main
     with:
       model: openrouter/z-ai/glm-4.7-flash
       review_model: openrouter/z-ai/glm-4.7-flash
+    secrets: inherit
 ```
 
 More copyable examples live in `examples/workflows`.
 
-## Required Agent environment secrets
+When OpenCode changes files, the action opens a helper pull request from an `agent/<issue>-<run>` branch. If no files changed, it only comments with the agent response.
 
-Create an environment named `agent` in this Agent repo and add these environment secrets:
+## Required caller secrets
 
+For OpenRouter, add these secrets to the caller repo:
+
+- `OPENROUTER_API_KEY`
 - `LANGFUSE_PUBLIC_KEY`
 - `LANGFUSE_SECRET_KEY`
 - `LANGFUSE_BASE_URL`
-- Provider key for the selected model, for example `ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, or `OPENROUTER_API_KEY`
 
-For OpenRouter, create an API key in OpenRouter and save it as the `OPENROUTER_API_KEY` environment secret on the Agent repo's `agent` environment. Target repositories only pass an OpenRouter model slug prefixed with `openrouter/`:
+Then target repositories pass the OpenRouter model slug prefixed with `openrouter/`:
 
 ```yaml
 with:

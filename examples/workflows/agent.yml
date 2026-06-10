@@ -16,14 +16,16 @@ permissions:
 jobs:
   agent-comment:
     if: github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment'
-    uses: Realrubr2/Agent/.github/workflows/agent.yml@v1
+    uses: Realrubr2/Agent/.github/workflows/agent.yml@main
     with:
       model: openrouter/z-ai/glm-4.7-flash
       review_model: openrouter/z-ai/glm-4.7-flash
+    secrets: inherit
 
   agent-review:
     if: github.event_name == 'pull_request'
-    uses: Realrubr2/Agent/.github/workflows/agent.yml@v1
+    uses: Realrubr2/Agent/.github/workflows/agent.yml@main
     with:
       model: openrouter/z-ai/glm-4.7-flash
       review_model: openrouter/z-ai/glm-4.7-flash
+    secrets: inherit

@@ -1,5 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import { inferMode, parseMentionPrompt, redact, requireEnv, requireModel, selectModel } from "../src/core"
+import {
+  choosePublishTarget,
+  extractOpencodeResponse,
+  inferMode,
+  parseMentionPrompt,
+  redact,
+  requireEnv,
+  requireModel,
+  selectModel,
+} from "../src/core"
 
 describe("parseMentionPrompt", () => {
   test("matches the default command and strips it from the prompt", () => {
@@ -45,19 +54,106 @@ describe("mode and model selection", () => {
     expect(
       selectModel({
         mode: "review",
-        model: "openai/gpt-5",
-        reviewModel: "anthropic/claude-sonnet",
+        model: "openrouter/z-ai/glm-4.7-flash",
+        reviewModel: "openrouter/openai/gpt-5",
       }),
-    ).toBe("anthropic/claude-sonnet")
+    ).toBe("openrouter/openai/gpt-5")
   })
 
   test("validates provider/model format", () => {
-    expect(requireModel("openai/gpt-5")).toEqual({ provider: "openai", model: "gpt-5" })
     expect(requireModel("openrouter/z-ai/glm-4.7-flash")).toEqual({
       provider: "openrouter",
       model: "z-ai/glm-4.7-flash",
     })
     expect(() => requireModel("gpt-5")).toThrow("Expected provider/model")
+    expect(() => requireModel("openai/gpt-5")).toThrow("Only openrouter models are supported")
+  })
+})
+
+describe("opencode helpers", () => {
+  test("extracts text parts from an OpenCode response", () => {
+    expect(
+      extractOpencodeResponse({
+        data: {
+          parts: [
+            { type: "text", text: "Changed files." },
+            { type: "reasoning", text: "hidden" },
+            { type: "text", text: "Ran tests." },
+          ],
+        },
+      }),
+    ).toBe("Changed files.\n\nRan tests.")
+  })
+
+  test("reports OpenCode message errors clearly", () => {
+    expect(() =>
+      extractOpencodeResponse({
+        data: {
+          info: { error: { name: "ProviderAuthError", data: { message: "bad key" } } },
+          parts: [],
+        },
+      }),
+    ).toThrow("ProviderAuthError: bad key")
+  })
+})
+
+describe("publish target selection", () => {
+  test("targets the default branch for issue runs", () => {
+    expect(
+      choosePublishTarget({
+        owner: "Realrubr2",
+        repo: "motomoto",
+        runId: "123",
+        defaultBranch: "main",
+        issueNumber: 7,
+      }),
+    ).toMatchObject({
+      branchName: "agent/7-123",
+      baseBranch: "main",
+      issueNumber: 7,
+    })
+  })
+
+  test("targets the original PR branch for same-repo pull requests", () => {
+    expect(
+      choosePublishTarget({
+        owner: "Realrubr2",
+        repo: "motomoto",
+        runId: "123",
+        defaultBranch: "main",
+        issueNumber: 8,
+        pullRequest: {
+          headRef: "feature/fix",
+          headRepoFullName: "Realrubr2/motomoto",
+          baseRef: "main",
+        },
+      }),
+    ).toMatchObject({
+      branchName: "agent/8-123",
+      baseBranch: "feature/fix",
+      issueNumber: 8,
+    })
+  })
+
+  test("falls back to the base branch for fork pull requests", () => {
+    const target = choosePublishTarget({
+      owner: "Realrubr2",
+      repo: "motomoto",
+      runId: "123",
+      defaultBranch: "main",
+      issueNumber: 9,
+      pullRequest: {
+        headRef: "fix",
+        headRepoFullName: "someone/motomoto",
+        baseRef: "main",
+      },
+    })
+    expect(target).toMatchObject({
+      branchName: "agent/9-123",
+      baseBranch: "main",
+      issueNumber: 9,
+    })
+    expect(target.fallbackNote).toContain("from a fork")
   })
 })
 

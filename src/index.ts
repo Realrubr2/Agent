@@ -1,6 +1,18 @@
 import fs from "node:fs/promises"
 import path from "node:path"
-import { SUPPORTED_EVENTS, inferMode, parseMentionPrompt, redact, requireEnv, requireModel, selectModel } from "./core"
+import { createOpencode, type Config } from "@opencode-ai/sdk"
+import {
+  SUPPORTED_EVENTS,
+  choosePublishTarget,
+  extractOpencodeResponse,
+  inferMode,
+  parseMentionPrompt,
+  redact,
+  requireEnv,
+  requireModel,
+  selectModel,
+  type PublishTarget,
+} from "./core"
 
 type GitHubContext = {
   eventName: string
@@ -22,12 +34,15 @@ type Skill = {
 const started = Date.now()
 const traceId = crypto.randomUUID()
 let langfuse: LangfuseClient
-const OPENAI_COMPATIBLE_DEFAULT_BASE_URLS: Record<string, string> = {
-  openrouter: "https://openrouter.ai/api/v1",
-}
 
 async function main() {
-  requireEnv(process.env, ["GITHUB_TOKEN", "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_BASE_URL"])
+  requireEnv(process.env, [
+    "GITHUB_TOKEN",
+    "LANGFUSE_PUBLIC_KEY",
+    "LANGFUSE_SECRET_KEY",
+    "LANGFUSE_BASE_URL",
+    "OPENROUTER_API_KEY",
+  ])
   const inputs = readInputs()
   langfuse = new LangfuseClient({
     publicKey: process.env.LANGFUSE_PUBLIC_KEY!,
@@ -61,6 +76,8 @@ async function main() {
   })
 
   const github = new GitHubClient(process.env.GITHUB_TOKEN!, context.owner, context.repo)
+  const publishTarget = await withSpan("publish target selection", () => resolvePublishTarget(context, github))
+  await withSpan("workspace branch setup", () => prepareWorkspaceBranch(context.workspace, publishTarget))
   const prompt = await withSpan("GitHub context loading", () => buildPrompt(context, inputs, mode, github))
   if (isUserEvent(context.eventName)) {
     await withSpan("permission check", () => assertWritePermission(github, context.actor))
@@ -70,7 +87,7 @@ async function main() {
   await langfuse.updateTrace("running", { skills: skills.map((skill) => skill.name) })
   const response = await withSpan("agent execution", () => runAgent(model, prompt, skills, inputs.telemetryIncludePrompts))
   const diff = await withSpan("git diff detection", () => gitDiff(context.workspace))
-  await withSpan("comment, commit, or PR publishing", () => publishResult(context, github, response, diff))
+  await withSpan("comment, commit, or PR publishing", () => publishResult(context, github, response, diff, publishTarget))
   await langfuse.updateTrace("success", { duration_ms: Date.now() - started, changed: diff.changed })
 }
 
@@ -155,31 +172,104 @@ async function runAgent(model: { provider: string; model: string }, prompt: stri
   const system = [
     "You are running as a shared GitHub repository agent.",
     "Be concise, specific, and action-oriented.",
+    "You may inspect files, edit files, and run shell commands when useful.",
+    "When you change files, summarize the changes and tests you ran.",
     "If you cannot safely make changes, explain exactly what you checked and why.",
     ...skills.map((skill) => `<skill name="${skill.name}" source="${skill.source}">\n${skill.body}\n</skill>`),
   ].join("\n\n")
   await langfuse.generationStart(model, includeTelemetryPayload ? { system, prompt } : undefined)
-  const response =
-    model.provider === "anthropic"
-      ? await callAnthropic(model.model, system, prompt)
-      : model.provider === "openai"
-        ? await callOpenAI(model.model, system, prompt)
-        : await callOpenAICompatible(model.provider, model.model, system, prompt)
-  await langfuse.generationEnd(includeTelemetryPayload ? response : undefined)
-  return response
+  const opencode = await createOpencode({
+    timeout: 30000,
+    config: openCodeConfig(model),
+  })
+  try {
+    const auth = await opencode.client.auth.set({
+      path: { id: "openrouter" },
+      body: { type: "api", key: process.env.OPENROUTER_API_KEY! },
+    })
+    if (auth.error) throw new Error(`OpenCode OpenRouter auth failed: ${JSON.stringify(auth.error)}`)
+    const session = await opencode.client.session.create({
+      query: { directory: process.cwd() },
+      body: { title: "GitHub Agent" },
+    })
+    if (session.error) throw new Error(`OpenCode session creation failed: ${JSON.stringify(session.error)}`)
+    if (!session.data?.id) throw new Error("OpenCode session creation failed: missing session id")
+    const result = await opencode.client.session.prompt({
+      path: { id: session.data.id },
+      query: { directory: process.cwd() },
+      body: {
+        model: { providerID: model.provider, modelID: model.model },
+        system,
+        parts: [{ type: "text", text: prompt }],
+      },
+    })
+    const response = extractOpencodeResponse(result)
+    await langfuse.generationEnd(includeTelemetryPayload ? response : undefined)
+    return response
+  } finally {
+    opencode.server.close()
+  }
 }
 
-async function publishResult(context: GitHubContext, github: GitHubClient, response: string, diff: { changed: boolean }) {
-  if (isUserEvent(context.eventName)) {
-    const issueNumber = getIssueNumber(context)
-    if (!issueNumber) return
-    await github.comment(issueNumber, `${response}\n\n[agent run](${context.runUrl})`)
+function openCodeConfig(model: { provider: string; model: string }): Config {
+  const openrouterOptions: NonNullable<NonNullable<Config["provider"]>[string]["options"]> = {
+    apiKey: process.env.OPENROUTER_API_KEY!,
+  }
+  if (process.env.OPENROUTER_BASE_URL) openrouterOptions.baseURL = process.env.OPENROUTER_BASE_URL
+  return {
+    enabled_providers: ["openrouter"],
+    model: `${model.provider}/${model.model}`,
+    small_model: `${model.provider}/${model.model}`,
+    provider: {
+      openrouter: {
+        id: "openrouter",
+        name: "OpenRouter",
+        options: openrouterOptions,
+        models: {
+          [model.model]: { name: model.model },
+        },
+      },
+    },
+    permission: {
+      edit: "allow",
+      bash: "allow",
+      webfetch: "deny",
+      external_directory: "deny",
+    },
+  }
+}
+
+async function publishResult(
+  context: GitHubContext,
+  github: GitHubClient,
+  response: string,
+  diff: { changed: boolean },
+  target: PublishTarget,
+) {
+  if (!diff.changed) {
+    if (isUserEvent(context.eventName) && target.issueNumber) {
+      await github.comment(target.issueNumber, `${response}\n\n[agent run](${context.runUrl})`)
+      return
+    }
+    console.log(response)
     return
   }
-  console.log(response)
-  if (diff.changed) {
-    console.log("Files changed, but branch/PR publishing is intentionally left to the agent implementation adapter.")
+
+  await commitAndPush(context.workspace, target)
+  const pr = await github.createPullRequest({
+    title: target.issueNumber ? `Agent changes for #${target.issueNumber}` : "Agent changes",
+    head: target.branchName,
+    base: target.baseBranch,
+    body: [response, target.fallbackNote, `[agent run](${context.runUrl})`].filter(Boolean).join("\n\n"),
+  })
+  const message = [response, target.fallbackNote, `Opened PR: ${pr.html_url}`, `[agent run](${context.runUrl})`]
+    .filter(Boolean)
+    .join("\n\n")
+  if (isUserEvent(context.eventName) && target.issueNumber) {
+    await github.comment(target.issueNumber, message)
+    return
   }
+  console.log(message)
 }
 
 async function acknowledgeInvocation(context: GitHubContext, github: GitHubClient) {
@@ -187,6 +277,45 @@ async function acknowledgeInvocation(context: GitHubContext, github: GitHubClien
   const issueNumber = getIssueNumber(context)
   if (!issueNumber) return
   await github.comment(issueNumber, `Agent called. I'm taking a look now.\n\n[agent run](${context.runUrl})`)
+}
+
+async function resolvePublishTarget(context: GitHubContext, github: GitHubClient) {
+  const issueNumber = getIssueNumber(context)
+  const defaultBranch = context.event.repository?.default_branch || (await github.defaultBranch())
+  const pullRequest = issueNumber && isPullRequestEvent(context) ? await pullRequestInfo(context, github, issueNumber) : undefined
+  return choosePublishTarget({
+    owner: context.owner,
+    repo: context.repo,
+    runId: context.runId,
+    defaultBranch,
+    issueNumber,
+    pullRequest,
+  })
+}
+
+async function pullRequestInfo(context: GitHubContext, github: GitHubClient, issueNumber: number) {
+  const pr = context.event.pull_request || (await github.pullRequest(issueNumber))
+  if (!pr.head?.ref || !pr.head?.repo?.full_name || !pr.base?.ref) {
+    throw new Error(`Pull request #${issueNumber} is missing head/base branch metadata`)
+  }
+  return {
+    headRef: pr.head.ref,
+    headRepoFullName: pr.head.repo.full_name,
+    baseRef: pr.base.ref,
+  }
+}
+
+async function prepareWorkspaceBranch(workspace: string, target: PublishTarget) {
+  await git(workspace, ["fetch", "origin", target.baseBranch])
+  await git(workspace, ["checkout", "-B", target.branchName, "FETCH_HEAD"])
+}
+
+async function commitAndPush(workspace: string, target: PublishTarget) {
+  await git(workspace, ["config", "user.name", "github-actions[bot]"])
+  await git(workspace, ["config", "user.email", "41898282+github-actions[bot]@users.noreply.github.com"])
+  await git(workspace, ["add", "-A"])
+  await git(workspace, ["commit", "-m", target.issueNumber ? `Apply agent changes for #${target.issueNumber}` : "Apply agent changes"])
+  await git(workspace, ["push", "--set-upstream", "origin", target.branchName])
 }
 
 async function readSkills(dir: string, source: "bundled" | "repo"): Promise<Skill[]> {
@@ -214,6 +343,25 @@ async function gitDiff(workspace: string) {
     let stdout = ""
     proc.stdout.on("data", (chunk) => (stdout += chunk))
     proc.on("close", () => resolve({ changed: stdout.trim().length > 0 }))
+  })
+}
+
+async function git(workspace: string, args: string[]) {
+  const { spawn } = await import("node:child_process")
+  return new Promise<string>((resolve, reject) => {
+    const proc = spawn("git", args, { cwd: workspace })
+    let stdout = ""
+    let stderr = ""
+    proc.stdout.on("data", (chunk) => (stdout += chunk))
+    proc.stderr.on("data", (chunk) => (stderr += chunk))
+    proc.on("error", reject)
+    proc.on("close", (code) => {
+      if (code === 0) {
+        resolve(stdout)
+        return
+      }
+      reject(new Error(`git ${args.join(" ")} failed with exit code ${code}${stderr ? `: ${stderr.trim()}` : ""}`))
+    })
   })
 }
 
@@ -266,6 +414,22 @@ class GitHubClient {
     await this.request(`/repos/${this.owner}/${this.repo}/issues/${issueNumber}/comments`, {
       method: "POST",
       body: JSON.stringify({ body }),
+    })
+  }
+
+  async defaultBranch() {
+    const data = await this.request<{ default_branch: string }>(`/repos/${this.owner}/${this.repo}`)
+    return data.default_branch
+  }
+
+  async pullRequest(number: number) {
+    return this.request<any>(`/repos/${this.owner}/${this.repo}/pulls/${number}`)
+  }
+
+  async createPullRequest(input: { title: string; head: string; base: string; body: string }) {
+    return this.request<{ html_url: string }>(`/repos/${this.owner}/${this.repo}/pulls`, {
+      method: "POST",
+      body: JSON.stringify(input),
     })
   }
 
@@ -369,65 +533,6 @@ class LangfuseClient {
     })
     if (!response.ok) console.warn(`Langfuse ingestion failed: ${response.status} ${response.statusText}`)
   }
-}
-
-async function callAnthropic(model: string, system: string, prompt: string) {
-  requireEnv(process.env, ["ANTHROPIC_API_KEY"])
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "x-api-key": process.env.ANTHROPIC_API_KEY!,
-      "anthropic-version": "2023-06-01",
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      max_tokens: 4096,
-      system,
-      messages: [{ role: "user", content: prompt }],
-    }),
-  })
-  if (!response.ok) throw new Error(`Anthropic request failed: ${response.status} ${response.statusText}`)
-  const data = (await response.json()) as any
-  return data.content?.map((item: any) => item.text).filter(Boolean).join("\n") || ""
-}
-
-async function callOpenAI(model: string, system: string, prompt: string) {
-  requireEnv(process.env, ["OPENAI_API_KEY"])
-  return callChatCompletions("https://api.openai.com/v1/chat/completions", process.env.OPENAI_API_KEY!, model, system, prompt)
-}
-
-async function callOpenAICompatible(provider: string, model: string, system: string, prompt: string) {
-  const envPrefix = provider.toUpperCase().replace(/-/g, "_")
-  const baseUrl = process.env[`${envPrefix}_BASE_URL`] || OPENAI_COMPATIBLE_DEFAULT_BASE_URLS[provider]
-  const apiKey = process.env[`${envPrefix}_API_KEY`]
-  if (!apiKey) {
-    throw new Error(`Missing required environment variables: ${envPrefix}_API_KEY`)
-  }
-  if (!baseUrl) {
-    throw new Error(`Unsupported provider "${provider}". Set ${envPrefix}_BASE_URL and ${envPrefix}_API_KEY for OpenAI-compatible providers.`)
-  }
-  return callChatCompletions(`${baseUrl.replace(/\/+$/, "")}/chat/completions`, apiKey, model, system, prompt)
-}
-
-async function callChatCompletions(url: string, apiKey: string, model: string, system: string, prompt: string) {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: "system", content: system },
-        { role: "user", content: prompt },
-      ],
-    }),
-  })
-  if (!response.ok) throw new Error(`Model request failed: ${response.status} ${response.statusText}`)
-  const data = (await response.json()) as any
-  return data.choices?.[0]?.message?.content || ""
 }
 
 main().catch(async (error) => {

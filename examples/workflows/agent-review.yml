@@ -11,7 +11,8 @@ permissions:
 
 jobs:
   agent:
-    uses: Realrubr2/Agent/.github/workflows/agent-review.yml@v1
+    uses: Realrubr2/Agent/.github/workflows/agent-review.yml@main
     with:
       model: openrouter/z-ai/glm-4.7-flash
       review_model: openrouter/z-ai/glm-4.7-flash
+    secrets: inherit

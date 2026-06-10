@@ -12,8 +12,9 @@ permissions:
 
 jobs:
   agent:
-    uses: Realrubr2/Agent/.github/workflows/agent-scheduled.yml@v1
+    uses: Realrubr2/Agent/.github/workflows/agent-scheduled.yml@main
     with:
       model: openrouter/z-ai/glm-4.7-flash
       prompt: |
         Review the repository for stale TODO comments and summarize anything that should become an issue or pull request.
+    secrets: inherit

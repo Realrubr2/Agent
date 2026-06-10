@@ -5,5 +5,8 @@
   "scripts": {
     "build": "bun build src/index.ts --target=node --outfile=dist/index.js",
     "test": "bun test"
+  },
+  "dependencies": {
+    "@opencode-ai/sdk": "^1.17.0"
   }
 }
