@@ -46,6 +46,8 @@ More copyable examples live in `examples/workflows`.
 
 When OpenCode changes files, the action opens a helper pull request from an `agent/<issue>-<run>` branch. If no files changed, it only comments with the agent response.
 
+The caller repo must allow workflows to create pull requests. In the caller repo, open `Settings -> Actions -> General -> Workflow permissions`, choose `Read and write permissions`, and enable `Allow GitHub Actions to create and approve pull requests`.
+
 ## Required caller secrets
 
 For OpenRouter, add these secrets to the caller repo:

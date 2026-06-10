@@ -2562,7 +2562,8 @@ class GitHubClient {
     });
     if (!response.ok) {
       const body = await response.text().catch(() => "");
-      throw new Error(`GitHub API failed ${init?.method || "GET"} ${path2}: ${response.status} ${response.statusText}${body ? ` - ${body}` : ""}`);
+      const hint = init?.method === "POST" && path2 === `/repos/${this.owner}/${this.repo}/pulls` && response.status === 403 ? " Enable Settings -> Actions -> General -> Workflow permissions -> Allow GitHub Actions to create and approve pull requests." : "";
+      throw new Error(`GitHub API failed ${init?.method || "GET"} ${path2}: ${response.status} ${response.statusText}${body ? ` - ${body}` : ""}${hint}`);
     }
     return await response.json();
   }
