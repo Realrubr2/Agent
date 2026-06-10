@@ -1,4 +1,4 @@
-name: shared-agent-comment
+name: shared-agent
 
 on:
   workflow_call:
@@ -7,6 +7,22 @@ on:
         type: string
         required: true
       review_model:
+        type: string
+        required: false
+        default: ""
+      schedule_model:
+        type: string
+        required: false
+        default: ""
+      triage_model:
+        type: string
+        required: false
+        default: ""
+      mode:
+        type: string
+        required: false
+        default: ""
+      prompt:
         type: string
         required: false
         default: ""
@@ -30,14 +46,9 @@ on:
 jobs:
   agent:
     if: |
-      github.event_name == 'pull_request_review_comment' ||
-      (
-        github.event_name == 'issue_comment' &&
-        (
-          startsWith(github.event.comment.body, inputs.mentions) ||
-          contains(github.event.comment.body, format(' {0}', inputs.mentions))
-        )
-      )
+      github.event_name != 'issue_comment' ||
+      startsWith(github.event.comment.body, inputs.mentions) ||
+      contains(github.event.comment.body, format(' {0}', inputs.mentions))
     runs-on: ubuntu-latest
     environment: agent
     permissions:
@@ -73,6 +84,10 @@ jobs:
           OPENROUTER_BASE_URL: ${{ secrets.OPENROUTER_BASE_URL }}
           INPUT_MODEL: ${{ inputs.model }}
           INPUT_REVIEW_MODEL: ${{ inputs.review_model }}
+          INPUT_SCHEDULE_MODEL: ${{ inputs.schedule_model }}
+          INPUT_TRIAGE_MODEL: ${{ inputs.triage_model }}
+          INPUT_MODE: ${{ inputs.mode || (github.event_name == 'pull_request' && 'review' || '') }}
+          INPUT_PROMPT: ${{ inputs.prompt || (github.event_name == 'pull_request' && 'Review this pull request. Focus on bugs, regressions, missing tests, and maintainability risks.' || '') }}
           INPUT_MENTIONS: ${{ inputs.mentions }}
           INPUT_SKILLS: ${{ inputs.skills }}
           INPUT_TELEMETRY_INCLUDE_PROMPTS: ${{ inputs.telemetry_include_prompts }}

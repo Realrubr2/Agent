@@ -29,6 +29,7 @@ on:
 jobs:
   agent:
     runs-on: ubuntu-latest
+    environment: agent
     permissions:
       contents: write
       issues: write
@@ -49,7 +50,7 @@ jobs:
           fetch-depth: 1
 
       - name: Run shared agent
-        run: node ../.agent-action/agent/dist/index.js
+        run: node ../.agent-action/dist/index.js
         working-directory: repo
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -58,6 +59,8 @@ jobs:
           LANGFUSE_BASE_URL: ${{ secrets.LANGFUSE_BASE_URL }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          OPENROUTER_BASE_URL: ${{ secrets.OPENROUTER_BASE_URL }}
           INPUT_MODEL: ${{ inputs.model }}
           INPUT_SCHEDULE_MODEL: ${{ inputs.schedule_model }}
           INPUT_MODE: schedule

@@ -5,10 +5,20 @@ on:
     types: [created]
   pull_request_review_comment:
     types: [created]
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
-  agent:
-    uses: Realrubr2/Agent/.github/workflows/agent-comment.yml@v1
+  agent-comment:
+    if: github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment'
+    uses: Realrubr2/Agent/.github/workflows/agent.yml@v1
     with:
-      model: openrouter/openai/gpt-5.2
-    secrets: inherit
+      model: openrouter/z-ai/glm-4.7-flash
+      review_model: openrouter/z-ai/glm-4.7-flash
+
+  agent-review:
+    if: github.event_name == 'pull_request'
+    uses: Realrubr2/Agent/.github/workflows/agent.yml@v1
+    with:
+      model: openrouter/z-ai/glm-4.7-flash
+      review_model: openrouter/z-ai/glm-4.7-flash

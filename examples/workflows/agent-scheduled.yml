@@ -9,7 +9,6 @@ jobs:
   agent:
     uses: Realrubr2/Agent/.github/workflows/agent-scheduled.yml@v1
     with:
-      model: openrouter/openai/gpt-5.2
+      model: openrouter/z-ai/glm-4.7-flash
       prompt: |
         Review the repository for stale TODO comments and summarize anything that should become an issue or pull request.
-    secrets: inherit

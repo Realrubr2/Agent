@@ -8,6 +8,5 @@ jobs:
   agent:
     uses: Realrubr2/Agent/.github/workflows/agent-review.yml@v1
     with:
-      model: openrouter/openai/gpt-5.2
-      review_model: openrouter/openai/gpt-5.2
-    secrets: inherit
+      model: openrouter/z-ai/glm-4.7-flash
+      review_model: openrouter/z-ai/glm-4.7-flash
