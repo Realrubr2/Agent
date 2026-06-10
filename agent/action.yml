@@ -1,0 +1,40 @@
+name: "Shared Agent"
+description: "Run a shared repo agent from GitHub comments, PRs, schedules, and manual workflows"
+branding:
+  icon: "cpu"
+  color: "blue"
+
+inputs:
+  model:
+    description: "Default model in provider/model format"
+    required: true
+  review_model:
+    description: "Model for pull request review mode. Defaults to model."
+    required: false
+  schedule_model:
+    description: "Model for schedule and workflow_dispatch mode. Defaults to model."
+    required: false
+  triage_model:
+    description: "Model for issue triage mode. Defaults to model."
+    required: false
+  mode:
+    description: "Explicit mode override"
+    required: false
+  prompt:
+    description: "Prompt for automated modes, or override prompt for comment modes"
+    required: false
+  mentions:
+    description: "Comma-separated trigger phrases. Defaults to /agent."
+    required: false
+    default: "/agent"
+  skills:
+    description: "Comma-separated skill allowlist. Defaults to all bundled and repo-local skills."
+    required: false
+  telemetry_include_prompts:
+    description: "Include prompts and model responses in Langfuse telemetry"
+    required: false
+    default: "false"
+
+runs:
+  using: "node20"
+  main: "dist/index.js"

@@ -1,0 +1,15 @@
+name: Scheduled Agent
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+jobs:
+  agent:
+    uses: Realrubr2/Agent/.github/workflows/agent-scheduled.yml@v1
+    with:
+      model: anthropic/claude-sonnet-4-5
+      prompt: |
+        Review the repository for stale TODO comments and summarize anything that should become an issue or pull request.
+    secrets: inherit

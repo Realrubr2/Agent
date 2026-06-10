@@ -1,0 +1,9 @@
+{
+  "name": "@ramon/shared-agent-action",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun build src/index.ts --target=node --outfile=dist/index.js",
+    "test": "bun test"
+  }
+}
