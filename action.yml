@@ -24,7 +24,7 @@ inputs:
     description: "Prompt for automated modes, or override prompt for comment modes"
     required: false
   mentions:
-    description: "Comma-separated trigger phrases. Defaults to /agent."
+    description: "Comma-separated trigger phrases for generic agent comments. Defaults to /agent. /renovate is always recognized on pull request comments."
     required: false
     default: "/agent"
   skills:

@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  buildRenovateInstructionPrompt,
   choosePublishTarget,
   extractOpencodeResponse,
   inferMode,
@@ -37,12 +38,23 @@ describe("parseMentionPrompt", () => {
       prompt: "normal comment",
     })
   })
+
+  test("matches the renovate command and strips it from the prompt", () => {
+    expect(parseMentionPrompt("please /renovate fix the lockfile", "/renovate")).toMatchObject({
+      matched: true,
+      prompt: "please fix the lockfile",
+    })
+  })
 })
 
 describe("mode and model selection", () => {
   test("infers review for pull request contexts", () => {
     expect(inferMode("issue_comment", true)).toBe("review")
     expect(inferMode("pull_request_review_comment", false)).toBe("review")
+  })
+
+  test("infers renovate mode from renovate comments", () => {
+    expect(inferMode("issue_comment", true, undefined, "/renovate update this")).toBe("renovate")
   })
 
   test("infers schedule and triage modes", () => {
@@ -58,6 +70,13 @@ describe("mode and model selection", () => {
         reviewModel: "openrouter/openai/gpt-5",
       }),
     ).toBe("openrouter/openai/gpt-5")
+    expect(
+      selectModel({
+        mode: "renovate",
+        model: "openrouter/z-ai/glm-4.7-flash",
+        reviewModel: "openrouter/openai/gpt-5",
+      }),
+    ).toBe("openrouter/openai/gpt-5")
   })
 
   test("validates provider/model format", () => {
@@ -67,6 +86,15 @@ describe("mode and model selection", () => {
     })
     expect(() => requireModel("gpt-5")).toThrow("Expected provider/model")
     expect(() => requireModel("openai/gpt-5")).toThrow("Only openrouter models are supported")
+  })
+})
+
+describe("renovate prompt", () => {
+  test("builds dependency update instructions with extra user guidance", () => {
+    const prompt = buildRenovateInstructionPrompt("focus pnpm")
+    expect(prompt).toContain("Renovate dependency update pull request")
+    expect(prompt).toContain("renovate-skill")
+    expect(prompt).toContain("Additional user instruction: focus pnpm")
   })
 })
 

@@ -26,7 +26,7 @@ jobs:
       review_model: openrouter/z-ai/glm-4.7-flash
       schedule_model: openrouter/z-ai/glm-4.7-flash
       issues: true
-      pull_requests: true
+      pull_requests: true # Enables /agent and /renovate on pull request threads.
       scheduled: true
       schedule_prompt: |
         Review the repository for stale TODO comments and summarize anything that should become an issue or pull request.

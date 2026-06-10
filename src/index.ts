@@ -2,7 +2,10 @@ import fs from "node:fs/promises"
 import path from "node:path"
 import { createOpencode, type Config } from "@opencode-ai/sdk"
 import {
+  RENOVATE_COMMAND,
+  RENOVATE_SKILL_NAME,
   SUPPORTED_EVENTS,
+  buildRenovateInstructionPrompt,
   choosePublishTarget,
   extractOpencodeResponse,
   inferMode,
@@ -11,6 +14,7 @@ import {
   requireEnv,
   requireModel,
   selectModel,
+  type AgentMode,
   type PublishTarget,
 } from "./core"
 
@@ -55,7 +59,7 @@ async function main() {
     throw new Error(`Unsupported event type: ${context.eventName}`)
   }
   const isPullRequest = isPullRequestEvent(context)
-  const mode = inferMode(context.eventName, isPullRequest, inputs.mode)
+  const mode = inferMode(context.eventName, isPullRequest, inputs.mode, commentBody(context))
   const selectedModel = selectModel({
     mode,
     model: inputs.model,
@@ -83,7 +87,8 @@ async function main() {
     await withSpan("permission check", () => assertTrustedInvocation(context))
   }
   await withSpan("acknowledgement comment", () => acknowledgeInvocation(context, github))
-  const skills = await withSpan("skill loading", () => loadSkills(inputs.skills, context.workspace))
+  const requiredSkills = mode === "renovate" ? [RENOVATE_SKILL_NAME] : []
+  const skills = await withSpan("skill loading", () => loadSkills(inputs.skills, context.workspace, requiredSkills))
   await langfuse.updateTrace("running", { skills: skills.map((skill) => skill.name) })
   const response = await withSpan("agent execution", () => runAgent(model, prompt, skills, inputs.telemetryIncludePrompts))
   const diff = await withSpan("git diff detection", () => gitDiff(context.workspace))
@@ -124,7 +129,21 @@ async function readContext(): Promise<GitHubContext> {
   }
 }
 
-async function buildPrompt(context: GitHubContext, inputs: ReturnType<typeof readInputs>, mode: string, github: GitHubClient) {
+async function buildPrompt(context: GitHubContext, inputs: ReturnType<typeof readInputs>, mode: AgentMode, github: GitHubClient) {
+  const comment = commentBody(context)
+  const reviewData = reviewCommentContext(context)
+  if (mode === "renovate") {
+    const issueNumber = getIssueNumber(context)
+    if (!issueNumber || !isPullRequestEvent(context)) {
+      throw new Error(`${RENOVATE_COMMAND} can only run on pull request comments or pull request events.`)
+    }
+    const parsed = comment ? parseMentionPrompt(comment, RENOVATE_COMMAND) : { matched: false, prompt: "" }
+    const contextData = await github.pullRequestContext(issueNumber)
+    return [buildRenovateInstructionPrompt(parsed.matched ? parsed.prompt : inputs.prompt), contextData, reviewData]
+      .filter(Boolean)
+      .join("\n\n")
+  }
+
   if (context.eventName === "schedule" || context.eventName === "workflow_dispatch") {
     if (!inputs.prompt) throw new Error("Input prompt is required for schedule and workflow_dispatch events")
     return inputs.prompt
@@ -137,25 +156,14 @@ async function buildPrompt(context: GitHubContext, inputs: ReturnType<typeof rea
   if (context.eventName === "issues" || context.eventName === "pull_request") {
     return [inputs.prompt || (mode === "review" ? "Review this pull request" : "Triage this issue"), contextData].filter(Boolean).join("\n\n")
   }
-  const comment = context.event.comment?.body || ""
   const parsed = parseMentionPrompt(comment, inputs.mentions)
   if (!parsed.matched) throw new Error(`Comment must mention ${parsed.mentions.map((item) => "`" + item + "`").join(" or ")}`)
-  const reviewData =
-    context.eventName === "pull_request_review_comment"
-      ? [
-          "<review_comment_context>",
-          `File: ${context.event.comment.path}`,
-          `Line: ${context.event.comment.line ?? context.event.comment.original_line ?? "unknown"}`,
-          context.event.comment.diff_hunk || "",
-          "</review_comment_context>",
-        ].join("\n")
-      : ""
   return [parsed.prompt || (mode === "review" ? "Review this pull request" : "Summarize this thread"), contextData, reviewData]
     .filter(Boolean)
     .join("\n\n")
 }
 
-async function loadSkills(allowlist: string | undefined, workspace: string): Promise<Skill[]> {
+async function loadSkills(allowlist: string | undefined, workspace: string, required: string[] = []): Promise<Skill[]> {
   const bundled = await readSkills(path.resolve(path.dirname(new URL(import.meta.url).pathname), "../skills"), "bundled")
   const repo = await readSkills(path.join(workspace, ".agent/skills"), "repo")
   const merged = new Map<string, Skill>()
@@ -167,6 +175,9 @@ async function loadSkills(allowlist: string | undefined, workspace: string): Pro
         .map((item) => item.trim())
         .filter(Boolean)
     : [...merged.keys()].sort()
+  for (const name of required) {
+    if (!names.includes(name)) names.push(name)
+  }
   return names.map((name) => {
     const skill = merged.get(name)
     if (!skill) throw new Error(`Skill "${name}" was requested but not found`)
@@ -371,6 +382,15 @@ async function git(workspace: string, args: string[]) {
   })
 }
 
+function truncateForPrompt(value: string, max: number) {
+  if (value.length <= max) return value
+  return `${value.slice(0, max)}\n[truncated ${value.length - max} chars]`
+}
+
+function escapeXml(value: string) {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+}
+
 function isPullRequestEvent(context: GitHubContext) {
   return Boolean(context.event.pull_request || context.event.issue?.pull_request)
 }
@@ -381,6 +401,21 @@ function isUserEvent(eventName: string) {
 
 function getIssueNumber(context: GitHubContext) {
   return context.event.issue?.number || context.event.pull_request?.number
+}
+
+function commentBody(context: GitHubContext) {
+  return context.event.comment?.body || ""
+}
+
+function reviewCommentContext(context: GitHubContext) {
+  if (context.eventName !== "pull_request_review_comment") return ""
+  return [
+    "<review_comment_context>",
+    `File: ${context.event.comment.path}`,
+    `Line: ${context.event.comment.line ?? context.event.comment.original_line ?? "unknown"}`,
+    context.event.comment.diff_hunk || "",
+    "</review_comment_context>",
+  ].join("\n")
 }
 
 async function assertTrustedInvocation(context: GitHubContext) {
@@ -450,6 +485,55 @@ class GitHubClient {
       comments.length ? "</comments>" : "",
       "</github_context>",
     ].join("\n")
+  }
+
+  async pullRequestContext(number: number) {
+    const [issue, pr, issueComments, reviews, reviewComments, files] = await Promise.all([
+      this.request<any>(`/repos/${this.owner}/${this.repo}/issues/${number}`),
+      this.request<any>(`/repos/${this.owner}/${this.repo}/pulls/${number}`),
+      this.request<any[]>(`/repos/${this.owner}/${this.repo}/issues/${number}/comments?per_page=100`),
+      this.request<any[]>(`/repos/${this.owner}/${this.repo}/pulls/${number}/reviews?per_page=100`),
+      this.request<any[]>(`/repos/${this.owner}/${this.repo}/pulls/${number}/comments?per_page=100`),
+      this.request<any[]>(`/repos/${this.owner}/${this.repo}/pulls/${number}/files?per_page=100`),
+    ])
+    return [
+      "<github_context>",
+      "<pull_request>",
+      `Number: ${number}`,
+      `Title: ${pr.title}`,
+      `Author: ${pr.user?.login}`,
+      `State: ${pr.state}`,
+      `Draft: ${pr.draft ? "true" : "false"}`,
+      `Base: ${pr.base?.repo?.full_name || this.owner + "/" + this.repo}:${pr.base?.ref}`,
+      `Head: ${pr.head?.repo?.full_name || "unknown"}:${pr.head?.ref}`,
+      issue.labels?.length ? `Labels: ${issue.labels.map((label: any) => label.name).filter(Boolean).join(", ")}` : "",
+      pr.body ? truncateForPrompt(pr.body, 8000) : "",
+      "</pull_request>",
+      issueComments.length ? "<issue_comments>" : "",
+      ...issueComments.map((comment) => `- ${comment.user?.login}: ${truncateForPrompt(comment.body || "", 3000)}`),
+      issueComments.length ? "</issue_comments>" : "",
+      reviews.length ? "<reviews>" : "",
+      ...reviews.map((review) => `- ${review.user?.login} ${review.state}: ${truncateForPrompt(review.body || "", 3000)}`),
+      reviews.length ? "</reviews>" : "",
+      reviewComments.length ? "<review_comments>" : "",
+      ...reviewComments.map(
+        (comment) =>
+          `- ${comment.user?.login} on ${comment.path}:${comment.line ?? comment.original_line ?? "unknown"}: ${truncateForPrompt(comment.body || "", 3000)}`,
+      ),
+      reviewComments.length ? "</review_comments>" : "",
+      files.length ? "<changed_files>" : "",
+      ...files.map((file) =>
+        [
+          `<file path="${escapeXml(String(file.filename || ""))}" status="${escapeXml(String(file.status || ""))}" additions="${file.additions ?? 0}" deletions="${file.deletions ?? 0}">`,
+          file.patch ? truncateForPrompt(file.patch, 6000) : "(no text patch available)",
+          "</file>",
+        ].join("\n"),
+      ),
+      files.length ? "</changed_files>" : "",
+      "</github_context>",
+    ]
+      .filter(Boolean)
+      .join("\n")
   }
 
   private async request<T>(path: string, init?: RequestInit): Promise<T> {

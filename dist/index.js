@@ -2035,6 +2035,8 @@ async function createOpencode(options) {
 var USER_EVENTS = ["issue_comment", "pull_request_review_comment", "issues", "pull_request"];
 var REPO_EVENTS = ["schedule", "workflow_dispatch"];
 var SUPPORTED_EVENTS = [...USER_EVENTS, ...REPO_EVENTS];
+var RENOVATE_COMMAND = "/renovate";
+var RENOVATE_SKILL_NAME = "renovate-skill";
 function parseMentionPrompt(body, mentionsInput) {
   const mentions = (mentionsInput || "/agent").split(",").map((mention2) => mention2.trim().toLowerCase()).filter(Boolean);
   const trimmed = body.trim();
@@ -2045,9 +2047,11 @@ function parseMentionPrompt(body, mentionsInput) {
   const prompt = trimmed.replace(mentionPattern(mention), "").replace(/\s+/g, " ").trim();
   return { matched: true, mentions, prompt };
 }
-function inferMode(eventName, isPullRequest, explicitMode) {
+function inferMode(eventName, isPullRequest, explicitMode, commentBody) {
   if (explicitMode)
     return normalizeMode(explicitMode);
+  if (commentBody && parseMentionPrompt(commentBody, RENOVATE_COMMAND).matched)
+    return "renovate";
   if (eventName === "schedule" || eventName === "workflow_dispatch")
     return "schedule";
   if (eventName === "issues")
@@ -2057,13 +2061,29 @@ function inferMode(eventName, isPullRequest, explicitMode) {
   return "comment";
 }
 function selectModel(input) {
-  if (input.mode === "review")
+  if (input.mode === "review" || input.mode === "renovate")
     return input.reviewModel || input.model;
   if (input.mode === "schedule")
     return input.scheduleModel || input.model;
   if (input.mode === "triage")
     return input.triageModel || input.model;
   return input.model;
+}
+function buildRenovateInstructionPrompt(userPrompt) {
+  return [
+    "Renovate command requested.",
+    "You are working on a Renovate dependency update pull request.",
+    "Follow the bundled renovate-skill instructions for the detailed dependency-update workflow.",
+    "Study the pull request title, body, changed files, issue comments, reviews, and review comments included below.",
+    "Identify the dependency version bumps Renovate proposed, implement or preserve those bumps in the checked-out repository, and refresh lockfiles or generated dependency metadata when needed.",
+    "Run the repository tests or the closest focused validation for the changed dependency area.",
+    "If validation fails, inspect the failure and make reasonable compatibility fixes required by the version bump.",
+    "If you cannot safely fix a failure, do not pretend it passed. Report the failing command, the likely root cause, and the smallest suggested fix.",
+    "Do not broaden the dependency update beyond Renovate's proposed bump unless the extra change is necessary for compatibility.",
+    "Return a concise summary of dependency changes, compatibility fixes, and validation results.",
+    userPrompt ? `Additional user instruction: ${userPrompt}` : ""
+  ].filter(Boolean).join(`
+`);
 }
 function requireModel(value) {
   const [provider, ...modelParts] = value.split("/");
@@ -2123,9 +2143,9 @@ function requireEnv(env, names) {
     throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
 }
 function normalizeMode(value) {
-  if (value === "comment" || value === "review" || value === "triage" || value === "schedule")
+  if (value === "comment" || value === "review" || value === "triage" || value === "schedule" || value === "renovate")
     return value;
-  throw new Error(`Invalid mode "${value}". Expected comment, review, triage, or schedule.`);
+  throw new Error(`Invalid mode "${value}". Expected comment, review, triage, schedule, or renovate.`);
 }
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -2174,7 +2194,7 @@ async function main() {
     throw new Error(`Unsupported event type: ${context.eventName}`);
   }
   const isPullRequest = isPullRequestEvent(context);
-  const mode = inferMode(context.eventName, isPullRequest, inputs.mode);
+  const mode = inferMode(context.eventName, isPullRequest, inputs.mode, commentBody(context));
   const selectedModel = selectModel({
     mode,
     model: inputs.model,
@@ -2200,7 +2220,8 @@ async function main() {
     await withSpan("permission check", () => assertTrustedInvocation(context));
   }
   await withSpan("acknowledgement comment", () => acknowledgeInvocation(context, github));
-  const skills = await withSpan("skill loading", () => loadSkills(inputs.skills, context.workspace));
+  const requiredSkills = mode === "renovate" ? [RENOVATE_SKILL_NAME] : [];
+  const skills = await withSpan("skill loading", () => loadSkills(inputs.skills, context.workspace, requiredSkills));
   await langfuse.updateTrace("running", { skills: skills.map((skill) => skill.name) });
   const response = await withSpan("agent execution", () => runAgent(model, prompt, skills, inputs.telemetryIncludePrompts));
   const diff = await withSpan("git diff detection", () => gitDiff(context.workspace));
@@ -2242,6 +2263,19 @@ async function readContext() {
   };
 }
 async function buildPrompt(context, inputs, mode, github) {
+  const comment = commentBody(context);
+  const reviewData = reviewCommentContext(context);
+  if (mode === "renovate") {
+    const issueNumber2 = getIssueNumber(context);
+    if (!issueNumber2 || !isPullRequestEvent(context)) {
+      throw new Error(`${RENOVATE_COMMAND} can only run on pull request comments or pull request events.`);
+    }
+    const parsed2 = comment ? parseMentionPrompt(comment, RENOVATE_COMMAND) : { matched: false, prompt: "" };
+    const contextData2 = await github.pullRequestContext(issueNumber2);
+    return [buildRenovateInstructionPrompt(parsed2.matched ? parsed2.prompt : inputs.prompt), contextData2, reviewData].filter(Boolean).join(`
+
+`);
+  }
   if (context.eventName === "schedule" || context.eventName === "workflow_dispatch") {
     if (!inputs.prompt)
       throw new Error("Input prompt is required for schedule and workflow_dispatch events");
@@ -2257,23 +2291,14 @@ async function buildPrompt(context, inputs, mode, github) {
 
 `);
   }
-  const comment = context.event.comment?.body || "";
   const parsed = parseMentionPrompt(comment, inputs.mentions);
   if (!parsed.matched)
     throw new Error(`Comment must mention ${parsed.mentions.map((item) => "`" + item + "`").join(" or ")}`);
-  const reviewData = context.eventName === "pull_request_review_comment" ? [
-    "<review_comment_context>",
-    `File: ${context.event.comment.path}`,
-    `Line: ${context.event.comment.line ?? context.event.comment.original_line ?? "unknown"}`,
-    context.event.comment.diff_hunk || "",
-    "</review_comment_context>"
-  ].join(`
-`) : "";
   return [parsed.prompt || (mode === "review" ? "Review this pull request" : "Summarize this thread"), contextData, reviewData].filter(Boolean).join(`
 
 `);
 }
-async function loadSkills(allowlist, workspace) {
+async function loadSkills(allowlist, workspace, required = []) {
   const bundled = await readSkills(path.resolve(path.dirname(new URL(import.meta.url).pathname), "../skills"), "bundled");
   const repo = await readSkills(path.join(workspace, ".agent/skills"), "repo");
   const merged = new Map;
@@ -2282,6 +2307,10 @@ async function loadSkills(allowlist, workspace) {
   for (const skill of repo)
     merged.set(skill.name, skill);
   const names = allowlist ? allowlist.split(",").map((item) => item.trim()).filter(Boolean) : [...merged.keys()].sort();
+  for (const name of required) {
+    if (!names.includes(name))
+      names.push(name);
+  }
   return names.map((name) => {
     const skill = merged.get(name);
     if (!skill)
@@ -2480,6 +2509,15 @@ async function git(workspace, args) {
     });
   });
 }
+function truncateForPrompt(value, max) {
+  if (value.length <= max)
+    return value;
+  return `${value.slice(0, max)}
+[truncated ${value.length - max} chars]`;
+}
+function escapeXml(value) {
+  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
 function isPullRequestEvent(context) {
   return Boolean(context.event.pull_request || context.event.issue?.pull_request);
 }
@@ -2488,6 +2526,21 @@ function isUserEvent(eventName) {
 }
 function getIssueNumber(context) {
   return context.event.issue?.number || context.event.pull_request?.number;
+}
+function commentBody(context) {
+  return context.event.comment?.body || "";
+}
+function reviewCommentContext(context) {
+  if (context.eventName !== "pull_request_review_comment")
+    return "";
+  return [
+    "<review_comment_context>",
+    `File: ${context.event.comment.path}`,
+    `Line: ${context.event.comment.line ?? context.event.comment.original_line ?? "unknown"}`,
+    context.event.comment.diff_hunk || "",
+    "</review_comment_context>"
+  ].join(`
+`);
 }
 async function assertTrustedInvocation(context) {
   if (context.eventName === "pull_request")
@@ -2556,6 +2609,49 @@ class GitHubClient {
       comments.length ? "</comments>" : "",
       "</github_context>"
     ].join(`
+`);
+  }
+  async pullRequestContext(number) {
+    const [issue, pr, issueComments, reviews, reviewComments, files] = await Promise.all([
+      this.request(`/repos/${this.owner}/${this.repo}/issues/${number}`),
+      this.request(`/repos/${this.owner}/${this.repo}/pulls/${number}`),
+      this.request(`/repos/${this.owner}/${this.repo}/issues/${number}/comments?per_page=100`),
+      this.request(`/repos/${this.owner}/${this.repo}/pulls/${number}/reviews?per_page=100`),
+      this.request(`/repos/${this.owner}/${this.repo}/pulls/${number}/comments?per_page=100`),
+      this.request(`/repos/${this.owner}/${this.repo}/pulls/${number}/files?per_page=100`)
+    ]);
+    return [
+      "<github_context>",
+      "<pull_request>",
+      `Number: ${number}`,
+      `Title: ${pr.title}`,
+      `Author: ${pr.user?.login}`,
+      `State: ${pr.state}`,
+      `Draft: ${pr.draft ? "true" : "false"}`,
+      `Base: ${pr.base?.repo?.full_name || this.owner + "/" + this.repo}:${pr.base?.ref}`,
+      `Head: ${pr.head?.repo?.full_name || "unknown"}:${pr.head?.ref}`,
+      issue.labels?.length ? `Labels: ${issue.labels.map((label) => label.name).filter(Boolean).join(", ")}` : "",
+      pr.body ? truncateForPrompt(pr.body, 8000) : "",
+      "</pull_request>",
+      issueComments.length ? "<issue_comments>" : "",
+      ...issueComments.map((comment) => `- ${comment.user?.login}: ${truncateForPrompt(comment.body || "", 3000)}`),
+      issueComments.length ? "</issue_comments>" : "",
+      reviews.length ? "<reviews>" : "",
+      ...reviews.map((review) => `- ${review.user?.login} ${review.state}: ${truncateForPrompt(review.body || "", 3000)}`),
+      reviews.length ? "</reviews>" : "",
+      reviewComments.length ? "<review_comments>" : "",
+      ...reviewComments.map((comment) => `- ${comment.user?.login} on ${comment.path}:${comment.line ?? comment.original_line ?? "unknown"}: ${truncateForPrompt(comment.body || "", 3000)}`),
+      reviewComments.length ? "</review_comments>" : "",
+      files.length ? "<changed_files>" : "",
+      ...files.map((file) => [
+        `<file path="${escapeXml(String(file.filename || ""))}" status="${escapeXml(String(file.status || ""))}" additions="${file.additions ?? 0}" deletions="${file.deletions ?? 0}">`,
+        file.patch ? truncateForPrompt(file.patch, 6000) : "(no text patch available)",
+        "</file>"
+      ].join(`
+`)),
+      files.length ? "</changed_files>" : "",
+      "</github_context>"
+    ].filter(Boolean).join(`
 `);
   }
   async request(path2, init) {

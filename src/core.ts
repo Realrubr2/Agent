@@ -1,8 +1,10 @@
 export const USER_EVENTS = ["issue_comment", "pull_request_review_comment", "issues", "pull_request"] as const
 export const REPO_EVENTS = ["schedule", "workflow_dispatch"] as const
 export const SUPPORTED_EVENTS = [...USER_EVENTS, ...REPO_EVENTS] as const
+export const RENOVATE_COMMAND = "/renovate"
+export const RENOVATE_SKILL_NAME = "renovate-skill"
 
-export type AgentMode = "comment" | "review" | "triage" | "schedule"
+export type AgentMode = "comment" | "review" | "triage" | "schedule" | "renovate"
 
 export function parseMentionPrompt(body: string, mentionsInput?: string) {
   const mentions = (mentionsInput || "/agent")
@@ -17,8 +19,9 @@ export function parseMentionPrompt(body: string, mentionsInput?: string) {
   return { matched: true, mentions, prompt }
 }
 
-export function inferMode(eventName: string, isPullRequest: boolean, explicitMode?: string): AgentMode {
+export function inferMode(eventName: string, isPullRequest: boolean, explicitMode?: string, commentBody?: string): AgentMode {
   if (explicitMode) return normalizeMode(explicitMode)
+  if (commentBody && parseMentionPrompt(commentBody, RENOVATE_COMMAND).matched) return "renovate"
   if (eventName === "schedule" || eventName === "workflow_dispatch") return "schedule"
   if (eventName === "issues") return "triage"
   if (eventName === "pull_request" || eventName === "pull_request_review_comment" || isPullRequest) return "review"
@@ -32,10 +35,28 @@ export function selectModel(input: {
   scheduleModel?: string
   triageModel?: string
 }) {
-  if (input.mode === "review") return input.reviewModel || input.model
+  if (input.mode === "review" || input.mode === "renovate") return input.reviewModel || input.model
   if (input.mode === "schedule") return input.scheduleModel || input.model
   if (input.mode === "triage") return input.triageModel || input.model
   return input.model
+}
+
+export function buildRenovateInstructionPrompt(userPrompt?: string) {
+  return [
+    "Renovate command requested.",
+    "You are working on a Renovate dependency update pull request.",
+    "Follow the bundled renovate-skill instructions for the detailed dependency-update workflow.",
+    "Study the pull request title, body, changed files, issue comments, reviews, and review comments included below.",
+    "Identify the dependency version bumps Renovate proposed, implement or preserve those bumps in the checked-out repository, and refresh lockfiles or generated dependency metadata when needed.",
+    "Run the repository tests or the closest focused validation for the changed dependency area.",
+    "If validation fails, inspect the failure and make reasonable compatibility fixes required by the version bump.",
+    "If you cannot safely fix a failure, do not pretend it passed. Report the failing command, the likely root cause, and the smallest suggested fix.",
+    "Do not broaden the dependency update beyond Renovate's proposed bump unless the extra change is necessary for compatibility.",
+    "Return a concise summary of dependency changes, compatibility fixes, and validation results.",
+    userPrompt ? `Additional user instruction: ${userPrompt}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n")
 }
 
 export function requireModel(value: string) {
@@ -123,8 +144,8 @@ export function requireEnv(env: Record<string, string | undefined>, names: strin
 }
 
 function normalizeMode(value: string): AgentMode {
-  if (value === "comment" || value === "review" || value === "triage" || value === "schedule") return value
-  throw new Error(`Invalid mode "${value}". Expected comment, review, triage, or schedule.`)
+  if (value === "comment" || value === "review" || value === "triage" || value === "schedule" || value === "renovate") return value
+  throw new Error(`Invalid mode "${value}". Expected comment, review, triage, schedule, or renovate.`)
 }
 
 function escapeRegExp(value: string) {

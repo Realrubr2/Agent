@@ -47,7 +47,7 @@ jobs:
 The event toggles decide which incoming events are allowed to run the single shared job:
 
 - `issues`: issue opened/edited events and `/agent` issue comments.
-- `pull_requests`: pull request events, `/agent` pull request comments, and `/agent` review comments.
+- `pull_requests`: pull request events, `/agent` pull request comments, `/agent` review comments, and `/renovate` on pull request threads.
 - `scheduled`: `schedule` and `workflow_dispatch` events.
 
 GitHub requires cron schedules to be declared in the caller workflow under `on.schedule`; the `scheduled` input only controls whether the shared job runs when that event fires.
@@ -69,6 +69,18 @@ More copyable examples live in `examples/workflows`.
 When OpenCode changes files, the action opens a helper pull request from an `agent/<issue>-<run>` branch. If no files changed, it only comments with the agent response.
 
 The caller repo must allow workflows to create pull requests. In the caller repo, open `Settings -> Actions -> General -> Workflow permissions`, choose `Read and write permissions`, and enable `Allow GitHub Actions to create and approve pull requests`.
+
+## Renovate PRs
+
+Comment `/renovate` on a Renovate pull request to run the dependency-update flow. The action loads `renovate-skill` automatically, reads the PR body, changed files, issue comments, reviews, and review comments, then asks OpenCode to preserve Renovate's proposed bumps, refresh lockfiles, run validation, and fix scoped compatibility failures when possible.
+
+You can add extra instruction after the command:
+
+```text
+/renovate focus on the pnpm lockfile failure
+```
+
+The command only runs when `pull_requests: true` and the comment is on a pull request or pull request review thread.
 
 ## Required caller secrets
 
