@@ -22,11 +22,6 @@ on:
         type: string
         required: false
         default: "false"
-      agent_ref:
-        type: string
-        required: false
-        default: ""
-
 jobs:
   agent:
     runs-on: ubuntu-latest
@@ -39,20 +34,17 @@ jobs:
       - name: Checkout caller repository
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
         with:
-          path: repo
           fetch-depth: 0
 
-      - name: Checkout shared agent
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
-        with:
-          repository: ${{ github.repository_owner }}/Agent
-          ref: ${{ inputs.agent_ref || github.workflow_sha }}
-          path: .agent-action
-          fetch-depth: 1
-
       - name: Run shared agent
-        run: node ../.agent-action/dist/index.js
-        working-directory: repo
+        uses: Realrubr2/Agent@main
+        with:
+          model: ${{ inputs.model }}
+          review_model: ${{ inputs.review_model }}
+          mode: review
+          prompt: ${{ inputs.prompt }}
+          skills: ${{ inputs.skills }}
+          telemetry_include_prompts: ${{ inputs.telemetry_include_prompts }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
           LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY }}
@@ -62,9 +54,3 @@ jobs:
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY }}
           OPENROUTER_BASE_URL: ${{ secrets.OPENROUTER_BASE_URL }}
-          INPUT_MODEL: ${{ inputs.model }}
-          INPUT_REVIEW_MODEL: ${{ inputs.review_model }}
-          INPUT_MODE: review
-          INPUT_PROMPT: ${{ inputs.prompt }}
-          INPUT_SKILLS: ${{ inputs.skills }}
-          INPUT_TELEMETRY_INCLUDE_PROMPTS: ${{ inputs.telemetry_include_prompts }}
