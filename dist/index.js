@@ -2242,17 +2242,25 @@ async function readContext() {
   };
 }
 async function buildPrompt(context, inputs, mode, github) {
-  if (inputs.prompt)
+  if (context.eventName === "schedule" || context.eventName === "workflow_dispatch") {
+    if (!inputs.prompt)
+      throw new Error("Input prompt is required for schedule and workflow_dispatch events");
     return inputs.prompt;
-  if (context.eventName === "schedule" || context.eventName === "workflow_dispatch" || context.eventName === "issues") {
-    throw new Error("Input prompt is required for schedule, workflow_dispatch, and issues events");
+  }
+  if (context.eventName === "issues" && !inputs.prompt) {
+    throw new Error("Input prompt is required for issues events");
+  }
+  const issueNumber = getIssueNumber(context);
+  const contextData = issueNumber ? await github.issueContext(issueNumber) : "";
+  if (context.eventName === "issues" || context.eventName === "pull_request") {
+    return [inputs.prompt || (mode === "review" ? "Review this pull request" : "Triage this issue"), contextData].filter(Boolean).join(`
+
+`);
   }
   const comment = context.event.comment?.body || "";
   const parsed = parseMentionPrompt(comment, inputs.mentions);
   if (!parsed.matched)
     throw new Error(`Comment must mention ${parsed.mentions.map((item) => "`" + item + "`").join(" or ")}`);
-  const issueNumber = getIssueNumber(context);
-  const contextData = issueNumber ? await github.issueContext(issueNumber) : "";
   const reviewData = context.eventName === "pull_request_review_comment" ? [
     "<review_comment_context>",
     `File: ${context.event.comment.path}`,

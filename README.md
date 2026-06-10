@@ -12,12 +12,17 @@ GitHub does not expose this Agent repo's secrets to workflow runs in other repos
 name: Agent
 
 on:
+  issues:
+    types: [opened, edited]
   issue_comment:
     types: [created]
   pull_request_review_comment:
     types: [created]
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -25,21 +30,38 @@ permissions:
   pull-requests: write
 
 jobs:
-  agent-comment:
-    if: github.event_name == 'issue_comment' || github.event_name == 'pull_request_review_comment'
+  agent:
     uses: Realrubr2/Agent/.github/workflows/agent.yml@main
     with:
       model: openrouter/z-ai/glm-4.7-flash
       review_model: openrouter/z-ai/glm-4.7-flash
+      schedule_model: openrouter/z-ai/glm-4.7-flash
+      issues: true
+      pull_requests: true
+      scheduled: true
+      schedule_prompt: |
+        Review the repository for stale TODO comments and summarize anything that should become an issue or pull request.
     secrets: inherit
+```
 
-  agent-review:
-    if: github.event_name == 'pull_request'
-    uses: Realrubr2/Agent/.github/workflows/agent.yml@main
-    with:
-      model: openrouter/z-ai/glm-4.7-flash
-      review_model: openrouter/z-ai/glm-4.7-flash
-    secrets: inherit
+The event toggles decide which incoming events are allowed to run the single shared job:
+
+- `issues`: issue opened/edited events and `/agent` issue comments.
+- `pull_requests`: pull request events, `/agent` pull request comments, and `/agent` review comments.
+- `scheduled`: `schedule` and `workflow_dispatch` events.
+
+GitHub requires cron schedules to be declared in the caller workflow under `on.schedule`; the `scheduled` input only controls whether the shared job runs when that event fires.
+
+For example, to allow issues and scheduled runs but disable pull request runs:
+
+```yaml
+with:
+  model: openrouter/z-ai/glm-4.7-flash
+  issues: true
+  pull_requests: false
+  scheduled: true
+  schedule_prompt: |
+    Review the repository for maintenance tasks.
 ```
 
 More copyable examples live in `examples/workflows`.

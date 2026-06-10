@@ -26,6 +26,18 @@ on:
         type: string
         required: false
         default: ""
+      issue_prompt:
+        type: string
+        required: false
+        default: "Triage this issue. Summarize the request, identify missing context, and suggest next steps."
+      pull_request_prompt:
+        type: string
+        required: false
+        default: "Review this pull request. Focus on bugs, regressions, missing tests, and maintainability risks."
+      schedule_prompt:
+        type: string
+        required: false
+        default: "Review the repository for maintenance opportunities and summarize anything that should become an issue or pull request."
       mentions:
         type: string
         required: false
@@ -38,6 +50,18 @@ on:
         type: string
         required: false
         default: "false"
+      issues:
+        type: boolean
+        required: false
+        default: true
+      pull_requests:
+        type: boolean
+        required: false
+        default: true
+      scheduled:
+        type: boolean
+        required: false
+        default: false
     secrets:
       OPENROUTER_API_KEY:
         required: true
@@ -52,9 +76,48 @@ on:
 jobs:
   agent:
     if: |
-      github.event_name != 'issue_comment' ||
-      startsWith(github.event.comment.body, inputs.mentions) ||
-      contains(github.event.comment.body, format(' {0}', inputs.mentions))
+      (
+        inputs.issues &&
+        (
+          github.event_name == 'issues' ||
+          (
+            github.event_name == 'issue_comment' &&
+            !github.event.issue.pull_request &&
+            (
+              startsWith(github.event.comment.body, inputs.mentions) ||
+              contains(github.event.comment.body, format(' {0}', inputs.mentions))
+            )
+          )
+        )
+      ) ||
+      (
+        inputs.pull_requests &&
+        (
+          github.event_name == 'pull_request' ||
+          (
+            github.event_name == 'pull_request_review_comment' &&
+            (
+              startsWith(github.event.comment.body, inputs.mentions) ||
+              contains(github.event.comment.body, format(' {0}', inputs.mentions))
+            )
+          ) ||
+          (
+            github.event_name == 'issue_comment' &&
+            github.event.issue.pull_request &&
+            (
+              startsWith(github.event.comment.body, inputs.mentions) ||
+              contains(github.event.comment.body, format(' {0}', inputs.mentions))
+            )
+          )
+        )
+      ) ||
+      (
+        inputs.scheduled &&
+        (
+          github.event_name == 'schedule' ||
+          github.event_name == 'workflow_dispatch'
+        )
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -76,8 +139,8 @@ jobs:
           review_model: ${{ inputs.review_model }}
           schedule_model: ${{ inputs.schedule_model }}
           triage_model: ${{ inputs.triage_model }}
-          mode: ${{ inputs.mode || (github.event_name == 'pull_request' && 'review' || '') }}
-          prompt: ${{ inputs.prompt || (github.event_name == 'pull_request' && 'Review this pull request. Focus on bugs, regressions, missing tests, and maintainability risks.' || '') }}
+          mode: ${{ inputs.mode }}
+          prompt: ${{ inputs.prompt || (github.event_name == 'pull_request' && inputs.pull_request_prompt || github.event_name == 'issues' && inputs.issue_prompt || (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && inputs.schedule_prompt || '') }}
           mentions: ${{ inputs.mentions }}
           skills: ${{ inputs.skills }}
           telemetry_include_prompts: ${{ inputs.telemetry_include_prompts }}
