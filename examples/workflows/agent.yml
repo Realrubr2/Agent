@@ -28,6 +28,7 @@ jobs:
       issues: true
       pull_requests: true # Enables /agent and /renovate on pull request threads.
       scheduled: true
+      provider_timeout_ms: "900000"
       schedule_prompt: |
         Review the repository for stale TODO comments and summarize anything that should become an issue or pull request.
     secrets: inherit

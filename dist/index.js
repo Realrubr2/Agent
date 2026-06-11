@@ -2174,6 +2174,7 @@ function formatUnknownError(error) {
 var started = Date.now();
 var traceId = crypto.randomUUID();
 var langfuse;
+var DEFAULT_PROVIDER_TIMEOUT_MS = 900000;
 async function main() {
   requireEnv(process.env, [
     "GITHUB_TOKEN",
@@ -2223,7 +2224,7 @@ async function main() {
   const requiredSkills = mode === "renovate" ? [RENOVATE_SKILL_NAME] : [];
   const skills = await withSpan("skill loading", () => loadSkills(inputs.skills, context.workspace, requiredSkills));
   await langfuse.updateTrace("running", { skills: skills.map((skill) => skill.name) });
-  const response = await withSpan("agent execution", () => runAgent(model, prompt, skills, inputs.telemetryIncludePrompts));
+  const response = await withSpan("agent execution", () => runAgent(model, prompt, skills, inputs.telemetryIncludePrompts, inputs.providerTimeoutMs));
   const diff = await withSpan("git diff detection", () => gitDiff(context.workspace));
   await withSpan("comment, commit, or PR publishing", () => publishResult(context, github, response, diff, publishTarget));
   await langfuse.updateTrace("success", { duration_ms: Date.now() - started, changed: diff.changed });
@@ -2241,8 +2242,18 @@ function readInputs() {
     prompt: process.env.INPUT_PROMPT || undefined,
     mentions: process.env.INPUT_MENTIONS || "/agent",
     skills: process.env.INPUT_SKILLS || undefined,
+    providerTimeoutMs: parseProviderTimeout(process.env.INPUT_PROVIDER_TIMEOUT_MS),
     telemetryIncludePrompts: process.env.INPUT_TELEMETRY_INCLUDE_PROMPTS === "true"
   };
+}
+function parseProviderTimeout(value) {
+  if (!value)
+    return DEFAULT_PROVIDER_TIMEOUT_MS;
+  const parsed = Number(value);
+  if (!Number.isInteger(parsed) || parsed < 60000) {
+    throw new Error("Input provider_timeout_ms must be an integer of at least 60000.");
+  }
+  return parsed;
 }
 async function readContext() {
   const eventPath = process.env.GITHUB_EVENT_PATH;
@@ -2318,7 +2329,7 @@ async function loadSkills(allowlist, workspace, required = []) {
     return skill;
   });
 }
-async function runAgent(model, prompt, skills, includeTelemetryPayload) {
+async function runAgent(model, prompt, skills, includeTelemetryPayload, providerTimeoutMs) {
   const system = [
     "You are running as a shared GitHub repository agent.",
     "Be concise, specific, and action-oriented.",
@@ -2332,26 +2343,28 @@ ${skill.body}
 
 `);
   await langfuse.generationStart(model, includeTelemetryPayload ? { system, prompt } : undefined);
-  const opencode = await createOpencode({
+  const opencode = await withSpan("OpenCode server startup", () => createOpencode({
     timeout: 30000,
-    config: openCodeConfig(model)
-  });
+    config: openCodeConfig(model, providerTimeoutMs)
+  }).catch((error) => {
+    throw new Error(`OpenCode server startup failed: ${formatError(error)}`);
+  }));
   try {
-    const auth = await opencode.client.auth.set({
+    const auth = await opencodeCall("OpenCode OpenRouter auth", () => opencode.client.auth.set({
       path: { id: "openrouter" },
       body: { type: "api", key: process.env.OPENROUTER_API_KEY }
-    });
+    }));
     if (auth.error)
       throw new Error(`OpenCode OpenRouter auth failed: ${JSON.stringify(auth.error)}`);
-    const session = await opencode.client.session.create({
+    const session = await opencodeCall("OpenCode session creation", () => opencode.client.session.create({
       query: { directory: process.cwd() },
       body: { title: "GitHub Agent" }
-    });
+    }));
     if (session.error)
       throw new Error(`OpenCode session creation failed: ${JSON.stringify(session.error)}`);
     if (!session.data?.id)
       throw new Error("OpenCode session creation failed: missing session id");
-    const result = await opencode.client.session.prompt({
+    const result = await opencodeCall("OpenCode session prompt", () => opencode.client.session.prompt({
       path: { id: session.data.id },
       query: { directory: process.cwd() },
       body: {
@@ -2359,7 +2372,7 @@ ${skill.body}
         system,
         parts: [{ type: "text", text: prompt }]
       }
-    });
+    }));
     const response = extractOpencodeResponse(result);
     await langfuse.generationEnd(includeTelemetryPayload ? response : undefined);
     return response;
@@ -2367,9 +2380,17 @@ ${skill.body}
     opencode.server.close();
   }
 }
-function openCodeConfig(model) {
+async function opencodeCall(label, fn) {
+  try {
+    return await withSpan(label, fn);
+  } catch (error) {
+    throw new Error(`${label} failed: ${formatError(error)}`);
+  }
+}
+function openCodeConfig(model, providerTimeoutMs) {
   const openrouterOptions = {
-    apiKey: process.env.OPENROUTER_API_KEY
+    apiKey: process.env.OPENROUTER_API_KEY,
+    timeout: providerTimeoutMs
   };
   if (process.env.OPENROUTER_BASE_URL)
     openrouterOptions.baseURL = process.env.OPENROUTER_BASE_URL;
@@ -2518,6 +2539,15 @@ function truncateForPrompt(value, max) {
 function escapeXml(value) {
   return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
+function formatError(error) {
+  if (error instanceof Error) {
+    const cause = error.cause instanceof Error ? `; cause: ${error.cause.message}` : "";
+    return `${error.message}${cause}`;
+  }
+  if (typeof error === "string")
+    return error;
+  return JSON.stringify(error) || String(error);
+}
 function isPullRequestEvent(context) {
   return Boolean(context.event.pull_request || context.event.issue?.pull_request);
 }
@@ -2655,6 +2685,7 @@ class GitHubClient {
 `);
   }
   async request(path2, init) {
+    const method = init?.method || "GET";
     const response = await fetch(`https://api.github.com${path2}`, {
       ...init,
       headers: {
@@ -2663,11 +2694,13 @@ class GitHubClient {
         "X-GitHub-Api-Version": "2022-11-28",
         ...init?.headers
       }
+    }).catch((error) => {
+      throw new Error(`GitHub API request failed ${method} ${path2}: ${formatError(error)}`);
     });
     if (!response.ok) {
       const body = await response.text().catch(() => "");
       const hint = init?.method === "POST" && path2 === `/repos/${this.owner}/${this.repo}/pulls` && response.status === 403 ? " Enable Settings -> Actions -> General -> Workflow permissions -> Allow GitHub Actions to create and approve pull requests." : "";
-      throw new Error(`GitHub API failed ${init?.method || "GET"} ${path2}: ${response.status} ${response.statusText}${body ? ` - ${body}` : ""}${hint}`);
+      throw new Error(`GitHub API failed ${method} ${path2}: ${response.status} ${response.statusText}${body ? ` - ${body}` : ""}${hint}`);
     }
     return await response.json();
   }
@@ -2717,25 +2750,29 @@ class LangfuseClient {
     });
   }
   async ingest(type, id, body) {
-    const response = await fetch(`${this.config.baseUrl.replace(/\/+$/, "")}/api/public/ingestion`, {
-      method: "POST",
-      headers: {
-        Authorization: `Basic ${Buffer.from(`${this.config.publicKey}:${this.config.secretKey}`).toString("base64")}`,
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        batch: [
-          {
-            id: crypto.randomUUID(),
-            type,
-            timestamp: new Date().toISOString(),
-            body: { id, ...body }
-          }
-        ]
-      })
-    });
-    if (!response.ok)
-      console.warn(`Langfuse ingestion failed: ${response.status} ${response.statusText}`);
+    try {
+      const response = await fetch(`${this.config.baseUrl.replace(/\/+$/, "")}/api/public/ingestion`, {
+        method: "POST",
+        headers: {
+          Authorization: `Basic ${Buffer.from(`${this.config.publicKey}:${this.config.secretKey}`).toString("base64")}`,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          batch: [
+            {
+              id: crypto.randomUUID(),
+              type,
+              timestamp: new Date().toISOString(),
+              body: { id, ...body }
+            }
+          ]
+        })
+      });
+      if (!response.ok)
+        console.warn(`Langfuse ingestion failed for ${type}: ${response.status} ${response.statusText}`);
+    } catch (error) {
+      console.warn(`Langfuse ingestion failed for ${type}: ${formatError(error)}`);
+    }
   }
 }
 main().catch(async (error) => {
@@ -2744,6 +2781,8 @@ main().catch(async (error) => {
     await langfuse.updateTrace("error", {
       error: error instanceof Error ? error.message : String(error),
       duration_ms: Date.now() - started
+    }).catch(() => {
+      return;
     });
   }
   process.exitCode = 1;

@@ -39,6 +39,7 @@ jobs:
       issues: true
       pull_requests: true
       scheduled: true
+      provider_timeout_ms: "900000"
       schedule_prompt: |
         Review the repository for stale TODO comments and summarize anything that should become an issue or pull request.
     secrets: inherit
@@ -67,6 +68,8 @@ with:
 More copyable examples live in `examples/workflows`.
 
 When OpenCode changes files, the action opens a helper pull request from an `agent/<issue>-<run>` branch. If no files changed, it only comments with the agent response.
+
+OpenCode provider requests default to `provider_timeout_ms: "900000"` in this workflow, which is 15 minutes. If a model or dependency-update run needs more room, raise that value in the caller workflow.
 
 The caller repo must allow workflows to create pull requests. In the caller repo, open `Settings -> Actions -> General -> Workflow permissions`, choose `Read and write permissions`, and enable `Allow GitHub Actions to create and approve pull requests`.
 

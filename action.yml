@@ -30,6 +30,10 @@ inputs:
   skills:
     description: "Comma-separated skill allowlist. Defaults to all bundled and repo-local skills."
     required: false
+  provider_timeout_ms:
+    description: "OpenCode provider request timeout in milliseconds. Defaults to 900000."
+    required: false
+    default: "900000"
   telemetry_include_prompts:
     description: "Include prompts and model responses in Langfuse telemetry"
     required: false

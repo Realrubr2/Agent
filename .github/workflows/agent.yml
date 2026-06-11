@@ -46,6 +46,10 @@ on:
         type: string
         required: false
         default: ""
+      provider_timeout_ms:
+        type: string
+        required: false
+        default: "900000"
       telemetry_include_prompts:
         type: string
         required: false
@@ -151,6 +155,7 @@ jobs:
           prompt: ${{ inputs.prompt || (github.event_name == 'pull_request' && inputs.pull_request_prompt || github.event_name == 'issues' && inputs.issue_prompt || (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && inputs.schedule_prompt || '') }}
           mentions: ${{ inputs.mentions }}
           skills: ${{ inputs.skills }}
+          provider_timeout_ms: ${{ inputs.provider_timeout_ms }}
           telemetry_include_prompts: ${{ inputs.telemetry_include_prompts }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
