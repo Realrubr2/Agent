@@ -1,0 +1,58 @@
+[tools]
+node = "20"
+
+[tasks.check]
+description = "Run source syntax checks."
+depends = ["worker:build"]
+run = [
+  "node --check src/agent-glue.mjs",
+  "node --check apps/worker/dist/main.js",
+]
+
+[tasks.test]
+description = "Run all local tests."
+depends = ["worker:test"]
+
+[tasks."worker:build"]
+description = "Build the worker dist files."
+run = "node apps/worker/scripts/build.mjs"
+sources = ["apps/worker/src/**/*.ts", "apps/worker/scripts/build.mjs"]
+outputs = ["apps/worker/dist/**/*.js"]
+
+[tasks."worker:dev"]
+description = "Run the worker locally with the sample job."
+depends = ["worker:build"]
+run = "node apps/worker/dist/main.js"
+
+[tasks."worker:test"]
+description = "Run worker unit and integration tests."
+depends = ["worker:build"]
+run = "node --test apps/worker/test/*.test.mjs"
+
+[tasks."worker:test:opencode"]
+description = "Run opencode runner tests with mocked APIs."
+depends = ["worker:build"]
+run = "node --test apps/worker/test/opencode*.test.mjs"
+
+[tasks."worker:docker:build"]
+description = "Build the worker container image with opencode installed."
+run = "docker build -t agent-worker:local -f apps/worker/Dockerfile ."
+sources = [
+  "apps/worker/Dockerfile",
+  "apps/worker/src/**/*.ts",
+  "apps/worker/examples/*.json",
+  "apps/worker/scripts/build.mjs",
+]
+
+[tasks."worker:smoke:container"]
+description = "Run container smoke checks against the built worker image."
+depends = ["worker:docker:build"]
+run = "node apps/worker/scripts/smoke-container.mjs"
+
+[tasks."worker:test:opencode-container"]
+description = "Build the image and run opencode container smoke checks."
+depends = ["worker:smoke:container"]
+
+[tasks."worker:opencode:smoke"]
+description = "Alias for the opencode container smoke suite."
+depends = ["worker:test:opencode-container"]

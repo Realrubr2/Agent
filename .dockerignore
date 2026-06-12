@@ -1,0 +1,7 @@
+.git
+.agent
+.tmp
+node_modules
+out
+opencode-agent/out
+apps/worker/dist

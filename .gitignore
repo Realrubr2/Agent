@@ -3,3 +3,5 @@ out/
 opencode-agent/out/
 .agent/
 .env
+.tmp/
+apps/worker/dist/

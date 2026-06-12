@@ -154,5 +154,13 @@ Aliases with `/opencode` also work:
 Run this in the central agent repo:
 
 ```bash
-npm run check
+mise run check
+```
+
+Useful worker commands:
+
+```bash
+mise run worker:test
+mise run worker:test:opencode
+mise run worker:test:opencode-container
 ```

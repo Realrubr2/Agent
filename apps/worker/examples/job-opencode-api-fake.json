@@ -1,0 +1,37 @@
+{
+  "jobId": "job_opencode_api_fake_001",
+  "sessionId": "session_opencode_api_fake_001",
+  "attempt": 1,
+  "prompt": "Send this prompt to a fake opencode API server.",
+  "repository": {
+    "owner": "realrubr2",
+    "name": "Server",
+    "fullName": "realrubr2/Server",
+    "cloneUrl": "https://github.com/realrubr2/Server.git",
+    "defaultBranch": "main"
+  },
+  "target": {
+    "kind": "issue",
+    "issueNumber": 123,
+    "pullRequestNumber": null,
+    "commentId": 456,
+    "actor": "ramon",
+    "triggerText": "@agent fake api"
+  },
+  "agent": {
+    "mode": "opencode-api",
+    "model": "local/fake",
+    "agentName": "build",
+    "timeoutSeconds": 30,
+    "opencode": {
+      "apiBaseUrl": "http://127.0.0.1:4096",
+      "startServer": false
+    },
+    "langfuse": {
+      "enabled": false,
+      "traceId": "session_opencode_api_fake_001",
+      "sessionId": "session_opencode_api_fake_001",
+      "tags": ["worker", "opencode", "fake-api"]
+    }
+  }
+}

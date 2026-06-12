@@ -1,0 +1,26 @@
+{
+  "jobId": "job_local_001",
+  "sessionId": "session_demo_001",
+  "attempt": 1,
+  "prompt": "Echo this prompt and persist the transcript.",
+  "repository": {
+    "owner": "realrubr2",
+    "name": "Server",
+    "fullName": "realrubr2/Server",
+    "cloneUrl": "https://github.com/realrubr2/Server.git",
+    "defaultBranch": "main"
+  },
+  "target": {
+    "kind": "issue",
+    "issueNumber": 123,
+    "pullRequestNumber": null,
+    "commentId": 456,
+    "actor": "ramon",
+    "triggerText": "@agent fix this"
+  },
+  "agent": {
+    "mode": "echo",
+    "model": "local/echo",
+    "timeoutSeconds": 60
+  }
+}

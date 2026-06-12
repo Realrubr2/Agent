@@ -1,0 +1,16 @@
+{
+  "name": "@agent/worker",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "mise run worker:build",
+    "dev": "mise run worker:dev",
+    "test": "mise run worker:test",
+    "test:opencode": "mise run worker:test:opencode",
+    "smoke:container": "mise run worker:smoke:container"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
