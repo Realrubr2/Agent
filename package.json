@@ -14,7 +14,10 @@
     "worker:docker:build": "mise run worker:docker:build",
     "worker:smoke:container": "mise run worker:smoke:container",
     "worker:test:opencode-container": "mise run worker:test:opencode-container",
-    "worker:opencode:smoke": "mise run worker:opencode:smoke"
+    "worker:opencode:smoke": "mise run worker:opencode:smoke",
+    "orchestrator:build": "mise run orchestrator:build",
+    "orchestrator:dev": "mise run orchestrator:dev",
+    "orchestrator:test": "mise run orchestrator:test"
   },
   "engines": {
     "node": ">=20"

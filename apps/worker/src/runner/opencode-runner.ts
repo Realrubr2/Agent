@@ -96,6 +96,7 @@ export class OpencodeRunner {
           `attempt=${attempt}`,
           `opencodeSessionId=${opencodeSession.id}`,
           `events=${events.length}`,
+          `summary=${summarizeEvents(events, opencodeSession.id)}`,
         ].join("\n"),
         opencode: {
           sessionId: opencodeSession.id,

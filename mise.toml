@@ -3,15 +3,16 @@ node = "20"
 
 [tasks.check]
 description = "Run source syntax checks."
-depends = ["worker:build"]
+depends = ["worker:build", "orchestrator:build"]
 run = [
   "node --check src/agent-glue.mjs",
   "node --check apps/worker/dist/main.js",
+  "node --check apps/orchestrator/dist/main.js",
 ]
 
 [tasks.test]
 description = "Run all local tests."
-depends = ["worker:test"]
+depends = ["worker:test", "orchestrator:test"]
 
 [tasks."worker:build"]
 description = "Build the worker dist files."
@@ -56,3 +57,19 @@ depends = ["worker:smoke:container"]
 [tasks."worker:opencode:smoke"]
 description = "Alias for the opencode container smoke suite."
 depends = ["worker:test:opencode-container"]
+
+[tasks."orchestrator:build"]
+description = "Build the webhook orchestrator dist files."
+run = "node apps/orchestrator/scripts/build.mjs"
+sources = ["apps/orchestrator/src/**/*.ts", "apps/orchestrator/scripts/build.mjs"]
+outputs = ["apps/orchestrator/dist/**/*.js"]
+
+[tasks."orchestrator:dev"]
+description = "Run the webhook orchestrator locally."
+depends = ["orchestrator:build"]
+run = "node apps/orchestrator/dist/main.js"
+
+[tasks."orchestrator:test"]
+description = "Run webhook orchestrator tests."
+depends = ["orchestrator:build"]
+run = "node --test apps/orchestrator/test/*.test.mjs"

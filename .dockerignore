@@ -5,3 +5,4 @@ node_modules
 out
 opencode-agent/out
 apps/worker/dist
+apps/orchestrator/dist

@@ -1,0 +1,14 @@
+{
+  "name": "@agent/orchestrator",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "mise run orchestrator:build",
+    "dev": "mise run orchestrator:dev",
+    "test": "mise run orchestrator:test"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

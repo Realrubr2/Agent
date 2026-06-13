@@ -24,6 +24,9 @@ The reusable workflows install these bundled skills into the runner before the a
 |   |-- reusable-plan.yml
 |   |-- reusable-implement.yml
 |   `-- reusable-pr-followup.yml
+|-- apps/
+|   |-- orchestrator/
+|   `-- worker/
 |-- src/
 |   `-- agent-glue.mjs
 |-- skills/
@@ -164,3 +167,12 @@ mise run worker:test
 mise run worker:test:opencode
 mise run worker:test:opencode-container
 ```
+
+Useful orchestrator commands:
+
+```bash
+mise run orchestrator:dev
+mise run orchestrator:test
+```
+
+The webhook orchestrator lives in `apps/orchestrator`. It listens on `/webhooks/github`, validates GitHub webhook signatures, parses `/agent` and `/opencode` commands, creates worker jobs, and launches the disposable worker.

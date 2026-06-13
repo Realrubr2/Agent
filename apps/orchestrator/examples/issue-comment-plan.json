@@ -1,0 +1,33 @@
+{
+  "action": "created",
+  "comment": {
+    "id": 456,
+    "body": "/webhook-agent plan",
+    "author_association": "OWNER",
+    "user": {
+      "login": "ramon"
+    }
+  },
+  "issue": {
+    "number": 123,
+    "title": "Add a webhook orchestrator",
+    "body": "Create a local server that listens for GitHub webhooks and starts worker jobs.",
+    "author_association": "OWNER",
+    "user": {
+      "login": "ramon"
+    },
+    "labels": []
+  },
+  "repository": {
+    "name": "Server",
+    "full_name": "realrubr2/Server",
+    "clone_url": "https://github.com/realrubr2/Server.git",
+    "default_branch": "main",
+    "owner": {
+      "login": "realrubr2"
+    }
+  },
+  "sender": {
+    "login": "ramon"
+  }
+}

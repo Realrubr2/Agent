@@ -5,3 +5,4 @@ opencode-agent/out/
 .env
 .tmp/
 apps/worker/dist/
+apps/orchestrator/dist/

@@ -1,5 +1,6 @@
 import { loadJobInput } from "./job-input.js";
 import { createRunner } from "./runner/runner-factory.js";
+import { RepositoryWorkflow } from "./services/repository-workflow.js";
 import { FileAgentStore } from "./storage/file-store.js";
 import { promptHash, summarizePrompt } from "./utils/prompt.js";
 
@@ -46,6 +47,9 @@ export async function runWorker(env = process.env, dependencies = {}) {
       updatedAt: now,
     });
 
+    const repositoryWorkflow = dependencies.repositoryWorkflow || new RepositoryWorkflow({ env, store });
+    await repositoryWorkflow.prepare(job, { attempt });
+
     const runner = dependencies.runner || createRunner(job, { env, store, dependencies });
     await store.appendTranscript(job.sessionId, {
       jobId: job.jobId,
@@ -54,7 +58,8 @@ export async function runWorker(env = process.env, dependencies = {}) {
       type: `${runner.kind}_runner_started`,
       message: `${runner.label || runner.kind} runner started.`,
     });
-    const result = await runner.run(job, { attempt });
+    const runnerResult = await runner.run(job, { attempt });
+    const result = await repositoryWorkflow.finalize(job, runnerResult, { attempt });
     if (result.stdout) console.log(result.stdout);
 
     await store.appendTranscript(job.sessionId, {

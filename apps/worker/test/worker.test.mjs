@@ -9,6 +9,7 @@ import { validateJob } from "../dist/job-schema.js";
 import { FileAgentStore } from "../dist/storage/file-store.js";
 import { EchoRunner } from "../dist/runner/echo-runner.js";
 import { createRunner } from "../dist/runner/runner-factory.js";
+import { RepositoryWorkflow } from "../dist/services/repository-workflow.js";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 
@@ -17,6 +18,24 @@ test("job schema validation accepts a complete payload", () => {
   assert.equal(job.jobId, "job_local_001");
   assert.equal(job.sessionId, "session_demo_001");
   assert.equal(job.repository.fullName, "realrubr2/Server");
+  assert.equal(job.target.action, "run");
+});
+
+test("job schema preserves explicit target action", () => {
+  const job = validateJob(sampleJob({
+    jobId: "job_approve_abc123",
+    target: {
+      action: "approve",
+      kind: "issue",
+      issueNumber: 123,
+      pullRequestNumber: null,
+      commentId: 456,
+      actor: "ramon",
+      triggerText: "/webhook-agent approve",
+    },
+  }));
+
+  assert.equal(job.target.action, "approve");
 });
 
 test("job schema validation rejects required missing fields", () => {
@@ -132,6 +151,51 @@ test("runner factory selects echo runner", () => {
   assert.equal(runner.kind, "echo");
 });
 
+test("repository workflow prepares, commits, pushes, and creates PR for approve", async () => {
+  const storeDir = await tempDir();
+  const store = new FileAgentStore(storeDir);
+  const calls = [];
+  const workflow = new RepositoryWorkflow({
+    env: {
+      GITHUB_TOKEN: "github_pat_test",
+      AGENT_WORKSPACE_DIR: path.join(storeDir, "workspaces"),
+    },
+    store,
+    execFile: async (command, args, options) => {
+      calls.push({ command, args, cwd: options.cwd });
+      if (args[0] === "status") return { stdout: " M index.js\n", stderr: "" };
+      return { stdout: "", stderr: "" };
+    },
+    fetch: async (url, options) => {
+      calls.push({ url: String(url), method: options.method || "GET", body: options.body });
+      return jsonResponse({ number: 12, html_url: "https://github.com/realrubr2/Server/pull/12" });
+    },
+  });
+  const job = validateJob(sampleJob({
+    jobId: "job_approve_abc123",
+    target: {
+      action: "approve",
+      kind: "issue",
+      issueNumber: 123,
+      pullRequestNumber: null,
+      commentId: 456,
+      actor: "ramon",
+      triggerText: "/webhook-agent approve",
+    },
+  }));
+
+  await workflow.prepare(job, { attempt: 1 });
+  const result = await workflow.finalize(job, { summary: "done", stdout: "runner output" }, { attempt: 1 });
+
+  assert.match(job.agent.workspaceDir, /repo$/);
+  assert.ok(calls.some((call) => call.args?.[0] === "clone"));
+  assert.ok(calls.some((call) => call.args?.[0] === "commit"));
+  assert.ok(calls.some((call) => call.args?.[0] === "push"));
+  assert.ok(calls.some((call) => call.url?.endsWith("/repos/realrubr2/Server/pulls") && call.method === "POST"));
+  assert.equal(result.git.pullRequestNumber, 12);
+  assert.match(result.stdout, /pullRequest=https:\/\/github.com\/realrubr2\/Server\/pull\/12/);
+});
+
 test("JOB_ID can load an existing local job record", async () => {
   const storeDir = await tempDir();
   const jobFile = await writeJobFile(storeDir, sampleJob());
@@ -190,6 +254,16 @@ async function readJson(filePath) {
 async function readJsonl(filePath) {
   const content = await fs.readFile(filePath, "utf8");
   return content.trim().split("\n").map((line) => JSON.parse(line));
+}
+
+function jsonResponse(value, status = 200) {
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    async text() {
+      return JSON.stringify(value);
+    },
+  };
 }
 
 function sampleJob(overrides = {}) {

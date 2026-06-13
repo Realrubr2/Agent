@@ -53,6 +53,7 @@ export function validateJob(value) {
       defaultBranch: job.repository.defaultBranch || "main",
     },
     target: {
+      action: job.target.action || actionFromJobId(job.jobId),
       kind: job.target.kind || "issue",
       issueNumber: nullableNumber(job.target.issueNumber),
       pullRequestNumber: nullableNumber(job.target.pullRequestNumber),
@@ -84,6 +85,11 @@ export function validateJob(value) {
     },
     raw: job,
   };
+}
+
+function actionFromJobId(jobId) {
+  const match = /^job_(plan|approve|improve)_/.exec(String(jobId || ""));
+  return match?.[1] || "run";
 }
 
 function requireString(value, field, errors) {
