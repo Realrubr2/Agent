@@ -8,14 +8,18 @@ RUN node apps/worker/scripts/build.mjs
 FROM node:20-bookworm-slim
 
 ARG OPENCODE_VERSION=1.15.10
+ARG OPENCODE_LANGFUSE_PLUGIN_VERSION=0.1.8
+
+WORKDIR /app
+COPY package.json ./
 
 RUN apt-get update \
   && apt-get install -y --no-install-recommends ca-certificates git openssh-client \
   && rm -rf /var/lib/apt/lists/* \
-  && npm install -g "opencode-ai@${OPENCODE_VERSION}" \
+  && npm install -g "opencode-ai@${OPENCODE_VERSION}" "opencode-plugin-langfuse@${OPENCODE_LANGFUSE_PLUGIN_VERSION}" \
+  && npm install --omit=dev \
   && opencode --version
 
-WORKDIR /app
 ENV NODE_ENV=production
 ENV AGENT_STORE_DIR=/data
 ENV HOME=/tmp/agent-worker-home

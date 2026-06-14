@@ -29,6 +29,7 @@ async function main() {
   if (command === "post-implementation") return postImplementation();
   if (command === "prepare-followup") return prepareFollowup();
   if (command === "post-followup") return postFollowup();
+  if (command === "require-env") return requireEnv();
   if (command === "trace") return await trace(process.argv[3] ?? "unknown", process.argv[4] ?? "ok");
 
   throw new Error(`Unknown command: ${command}`);
@@ -249,6 +250,36 @@ function postFollowup() {
   gh("issue", "comment", String(issue.number), "--body", body);
 }
 
+function requireEnv() {
+  if (allowMissingSecrets()) {
+    console.log("Skipping required credential check for local tests.");
+    return;
+  }
+
+  const missing = [];
+  if (!process.env.OPENROUTER_API_KEY && !process.env.OPENAI_API_KEY) {
+    missing.push("OPENROUTER_API_KEY");
+  }
+  if (!process.env.GITHUB_TOKEN && !process.env.GH_TOKEN) {
+    missing.push("GITHUB_TOKEN or GH_TOKEN");
+  }
+  if (!process.env.LANGFUSE_PUBLIC_KEY) {
+    missing.push("LANGFUSE_PUBLIC_KEY");
+  }
+  if (!process.env.LANGFUSE_SECRET_KEY) {
+    missing.push("LANGFUSE_SECRET_KEY");
+  }
+
+  if (missing.length > 0) {
+    throw new Error([
+      `Missing required agent environment: ${missing.join(", ")}.`,
+      "Set AGENT_ALLOW_MISSING_SECRETS=1 only for local tests.",
+    ].join(" "));
+  }
+
+  console.log("Required agent environment is present.");
+}
+
 async function trace(stage, status) {
   if (!process.env.LANGFUSE_PUBLIC_KEY || !process.env.LANGFUSE_SECRET_KEY) {
     console.log("Langfuse secrets not set; skipping trace.");
@@ -296,6 +327,11 @@ async function trace(stage, status) {
   }).catch((error) => {
     console.warn(`Langfuse trace failed: ${error.message}`);
   });
+}
+
+function allowMissingSecrets() {
+  return ["1", "true", "yes", "on"].includes(String(process.env.AGENT_ALLOW_MISSING_SECRETS || "").toLowerCase())
+    || String(process.env.NODE_ENV || "").toLowerCase() === "test";
 }
 
 function parseCommand(text) {

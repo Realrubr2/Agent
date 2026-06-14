@@ -37,6 +37,9 @@ export class WorkerLauncher {
     for (const name of this.config.providerEnvNames) {
       if (this.env[name]) args.push("-e", name);
     }
+    for (const name of this.config.langfuseEnvNames) {
+      if (this.env[name]) args.push("-e", name);
+    }
     for (const name of ["GITHUB_TOKEN", "GH_TOKEN", "AGENT_GIT_AUTHOR_NAME", "AGENT_GIT_AUTHOR_EMAIL"]) {
       if (this.env[name]) args.push("-e", name);
     }
@@ -67,6 +70,9 @@ export class WorkerLauncher {
       AGENT_STORE_DIR: this.config.workerStoreDir,
     };
     for (const name of this.config.providerEnvNames) {
+      if (!this.env[name]) delete env[name];
+    }
+    for (const name of this.config.langfuseEnvNames) {
       if (!this.env[name]) delete env[name];
     }
     return env;

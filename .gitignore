@@ -3,6 +3,7 @@ out/
 opencode-agent/out/
 .agent/
 .env
+.envrc
 .tmp/
 apps/worker/dist/
 apps/orchestrator/dist/

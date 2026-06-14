@@ -37,9 +37,37 @@ export function loadConfig(env = process.env) {
     githubApiBaseUrl: env.GITHUB_API_BASE_URL || "https://api.github.com",
     githubDryRun: booleanFrom(env.ORCHESTRATOR_GITHUB_DRY_RUN),
     providerEnvNames: listFrom(env.ORCHESTRATOR_PROVIDER_ENV || "OPENAI_API_KEY,ANTHROPIC_API_KEY,OPENROUTER_API_KEY"),
+    langfuseEnvNames: listFrom(env.ORCHESTRATOR_LANGFUSE_ENV || "LANGFUSE_PUBLIC_KEY,LANGFUSE_SECRET_KEY,LANGFUSE_BASEURL,LANGFUSE_HOST"),
     workerTimeoutSeconds: numberFrom(env.ORCHESTRATOR_WORKER_TIMEOUT_SECONDS, 900),
-    opencodeTimeoutSeconds: numberFrom(env.ORCHESTRATOR_OPENCODE_TIMEOUT_SECONDS, 300),
+    opencodeTimeoutSeconds: numberFrom(env.ORCHESTRATOR_OPENCODE_TIMEOUT_SECONDS, 900),
   };
+}
+
+export function validateRequiredServiceEnv(config, env = process.env) {
+  if (allowMissingSecrets(env)) {
+    return { ok: true, skipped: true, missing: [] };
+  }
+
+  const missing = [];
+  if (!env.OPENROUTER_API_KEY) missing.push("OPENROUTER_API_KEY");
+  if (!config.githubToken) missing.push("GITHUB_TOKEN or GH_TOKEN");
+  if (!env.LANGFUSE_PUBLIC_KEY) missing.push("LANGFUSE_PUBLIC_KEY");
+  if (!env.LANGFUSE_SECRET_KEY) missing.push("LANGFUSE_SECRET_KEY");
+
+  if (missing.length > 0) {
+    throw new Error([
+      `Missing required service environment: ${missing.join(", ")}.`,
+      "Set AGENT_ALLOW_MISSING_SECRETS=1 only for local tests.",
+    ].join(" "));
+  }
+
+  return { ok: true, skipped: false, missing };
+}
+
+function allowMissingSecrets(env) {
+  return booleanFrom(env.AGENT_ALLOW_MISSING_SECRETS)
+    || booleanFrom(env.ORCHESTRATOR_ALLOW_MISSING_SECRETS)
+    || String(env.NODE_ENV || "").toLowerCase() === "test";
 }
 
 function isOpenRouterMode(value) {

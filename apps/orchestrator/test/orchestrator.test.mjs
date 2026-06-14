@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { parseCommand } from "../dist/commands.js";
-import { loadConfig } from "../dist/config.js";
+import { loadConfig, validateRequiredServiceEnv } from "../dist/config.js";
 import { buildWorkerJob, extractLatestPlan } from "../dist/jobs.js";
 import { handleGitHubEvent, verifySignature } from "../dist/webhook.js";
 
@@ -78,7 +78,52 @@ test("buildWorkerJob creates normalized worker input", async () => {
   assert.equal(job.repository.fullName, "realrubr2/Server");
   assert.equal(job.target.issueNumber, 123);
   assert.equal(job.agent.mode, "echo");
+  assert.equal(job.agent.timeoutSeconds, 900);
   assert.match(job.prompt, /planning phase/);
+});
+
+test("loadConfig includes Langfuse env passthrough names", () => {
+  const config = loadConfig({});
+
+  assert.ok(config.langfuseEnvNames.includes("LANGFUSE_PUBLIC_KEY"));
+  assert.ok(config.langfuseEnvNames.includes("LANGFUSE_SECRET_KEY"));
+  assert.ok(config.langfuseEnvNames.includes("LANGFUSE_BASEURL"));
+  assert.ok(config.langfuseEnvNames.includes("LANGFUSE_HOST"));
+});
+
+test("validateRequiredServiceEnv rejects missing production credentials", () => {
+  const config = loadConfig({});
+
+  assert.throws(
+    () => validateRequiredServiceEnv(config, {}),
+    /Missing required service environment: OPENROUTER_API_KEY, GITHUB_TOKEN or GH_TOKEN, LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY/,
+  );
+});
+
+test("validateRequiredServiceEnv accepts required service credentials", () => {
+  const env = {
+    OPENROUTER_API_KEY: "sk-or-test",
+    GITHUB_TOKEN: "github_pat_test",
+    LANGFUSE_PUBLIC_KEY: "pk-lf-test",
+    LANGFUSE_SECRET_KEY: "sk-lf-test",
+  };
+  const config = loadConfig(env);
+
+  assert.deepEqual(validateRequiredServiceEnv(config, env), {
+    ok: true,
+    skipped: false,
+    missing: [],
+  });
+});
+
+test("validateRequiredServiceEnv can be skipped for local tests", () => {
+  const config = loadConfig({});
+
+  assert.deepEqual(validateRequiredServiceEnv(config, { AGENT_ALLOW_MISSING_SECRETS: "1" }), {
+    ok: true,
+    skipped: true,
+    missing: [],
+  });
 });
 
 test("buildWorkerJob uses openrouter for plan and opencode for implementation by default", async () => {

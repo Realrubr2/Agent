@@ -19,8 +19,10 @@ on:
         type: string
         default: OWNER,MEMBER,COLLABORATOR
     secrets:
+      OPENROUTER_API_KEY:
+        required: false
       OPENAI_API_KEY:
-        required: true
+        required: false
       LANGFUSE_PUBLIC_KEY:
         required: false
       LANGFUSE_SECRET_KEY:
@@ -48,6 +50,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       GITHUB_TOKEN: ${{ github.token }}
+      OPENROUTER_API_KEY: ${{ secrets.OPENROUTER_API_KEY || secrets.OPENAI_API_KEY || vars.OPENROUTER_API_KEY || vars.OPENAI_API_KEY }}
       LANGFUSE_PUBLIC_KEY: ${{ secrets.LANGFUSE_PUBLIC_KEY || vars.LANGFUSE_PUBLIC_KEY }}
       LANGFUSE_SECRET_KEY: ${{ secrets.LANGFUSE_SECRET_KEY || vars.LANGFUSE_SECRET_KEY }}
       LANGFUSE_HOST: ${{ secrets.LANGFUSE_HOST || vars.LANGFUSE_HOST }}
@@ -69,6 +72,9 @@ jobs:
       - name: Ignore reusable agent checkout
         run: echo ".agent/" >> .git/info/exclude
 
+      - name: Validate required environment
+        run: node .agent/src/agent-glue.mjs require-env
+
       - name: Install bundled skills
         run: |
           mkdir -p "$HOME/.opencode/skills"
@@ -86,7 +92,7 @@ jobs:
       - name: Run Opencode implementation
         uses: anomalyco/opencode/github@latest
         env:
-          OPENROUTER_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          OPENROUTER_API_KEY: ${{ env.OPENROUTER_API_KEY }}
           GITHUB_TOKEN: ${{ github.token }}
         with:
           model: ${{ env.provider_model }}

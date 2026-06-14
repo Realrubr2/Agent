@@ -4,6 +4,9 @@
   "private": true,
   "type": "module",
   "description": "GitHub Actions glue for an issue-to-PR opencode agent with Langfuse workflow tracing.",
+  "dependencies": {
+    "@opencode-ai/sdk": "1.17.0"
+  },
   "scripts": {
     "check": "mise run check",
     "test": "mise run test",

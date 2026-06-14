@@ -16,6 +16,8 @@ Start the orchestrator with the local webhook defaults:
 ```bash
 GITHUB_TOKEN="<BOT_ACCOUNT_PAT>" \
 OPENROUTER_API_KEY="<YOUR_OPENROUTER_KEY>" \
+LANGFUSE_PUBLIC_KEY="<YOUR_LANGFUSE_PUBLIC_KEY>" \
+LANGFUSE_SECRET_KEY="<YOUR_LANGFUSE_SECRET_KEY>" \
 mise run orchestrator:webhook
 ```
 
@@ -50,6 +52,8 @@ mise run worker:docker:build
 
 GITHUB_TOKEN="<BOT_ACCOUNT_PAT>" \
 OPENROUTER_API_KEY="<YOUR_OPENROUTER_KEY>" \
+LANGFUSE_PUBLIC_KEY="<YOUR_LANGFUSE_PUBLIC_KEY>" \
+LANGFUSE_SECRET_KEY="<YOUR_LANGFUSE_SECRET_KEY>" \
 mise run orchestrator:webhook
 ```
 
@@ -66,4 +70,14 @@ For a real webhook receiver, set:
 - `ORCHESTRATOR_AGENT_MODE`, default `echo`.
 - `ORCHESTRATOR_AGENT_MODEL`, default `local/echo`.
 
+The service fails at startup unless `OPENROUTER_API_KEY`, `GITHUB_TOKEN` or `GH_TOKEN`, `LANGFUSE_PUBLIC_KEY`, and `LANGFUSE_SECRET_KEY` are present. Set `AGENT_ALLOW_MISSING_SECRETS=1` only for local tests that intentionally avoid live providers.
+
 Provider credentials such as `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, and `OPENROUTER_API_KEY` are passed through to the worker when present.
+
+Required Langfuse tracing:
+
+- `LANGFUSE_PUBLIC_KEY`
+- `LANGFUSE_SECRET_KEY`
+- `LANGFUSE_BASEURL` optional, defaults to Langfuse Cloud. `LANGFUSE_HOST` is also accepted and normalized for the OpenCode plugin.
+
+When both Langfuse keys are present, the worker enables OpenCode OpenTelemetry and `opencode-plugin-langfuse` in the generated runtime `opencode.json`.

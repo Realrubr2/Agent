@@ -1,4 +1,4 @@
-import { OpencodeApiClient } from "../services/opencode-api-client.js";
+import { OpencodeSdkClient } from "../services/opencode-sdk-client.js";
 import { OpencodeProcessManager } from "../services/opencode-process-manager.js";
 import { createLangfuseSink } from "../services/langfuse-sink.js";
 import { redactSecrets } from "../utils/redact.js";
@@ -32,9 +32,10 @@ export class OpencodeRunner {
         server = await processManager.start(job, { attempt });
       }
 
-      const client = this.dependencies.apiClient || new OpencodeApiClient({
+      const client = this.dependencies.apiClient || new OpencodeSdkClient({
         baseUrl: server.baseUrl,
         password: job.agent.opencode.serverPassword,
+        directory: job.agent.workspaceDir,
       });
 
       const health = await client.health();
@@ -74,7 +75,10 @@ export class OpencodeRunner {
       const opencodeSession = await client.createSession(job);
       await this.append(job, attempt, "system", "opencode_session_created", `opencodeSessionId=${opencodeSession.id}`);
 
-      const events = await client.sendPrompt(opencodeSession.id, job);
+      const events = await withOpencodeGuards(
+        client.sendPrompt(opencodeSession.id, job),
+        server,
+      );
       for (const event of events) {
         await this.appendEvent(job, attempt, event);
         await sink.recordEvent(job, event);
@@ -133,6 +137,21 @@ export class OpencodeRunner {
     const normalized = normalizeEvent(event);
     await this.append(job, attempt, normalized.role, normalized.type, normalized.message);
   }
+}
+
+async function withOpencodeGuards(work, server = {}) {
+  const guards = [work];
+  if (server.permissionPrompt) {
+    guards.push(server.permissionPrompt.then((error) => {
+      throw error;
+    }));
+  }
+  if (server.exited) {
+    guards.push(server.exited.then((error) => {
+      throw error;
+    }));
+  }
+  return await Promise.race(guards);
 }
 
 function normalizeEvent(event) {

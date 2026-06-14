@@ -67,10 +67,12 @@ If the central repo is named differently, replace `realrubr2/Agent` in all three
 
 Add these secrets to every app repo that will use the agent:
 
-- `OPENAI_API_KEY`
-- `LANGFUSE_PUBLIC_KEY` optional
-- `LANGFUSE_SECRET_KEY` optional
+- `OPENROUTER_API_KEY`
+- `LANGFUSE_PUBLIC_KEY`
+- `LANGFUSE_SECRET_KEY`
 - `LANGFUSE_HOST` optional, defaults to Langfuse Cloud behavior in the glue script
+
+`OPENAI_API_KEY` is still accepted as a legacy fallback for the OpenRouter key, but new repos should use `OPENROUTER_API_KEY`.
 
 The workflow uses GitHub's built-in `GITHUB_TOKEN` for comments, labels, branches, and pull requests.
 

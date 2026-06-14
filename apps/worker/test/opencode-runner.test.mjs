@@ -5,8 +5,9 @@ import test from "node:test";
 import { runWorker } from "../dist/worker.js";
 import { validateJob } from "../dist/job-schema.js";
 import { createRunner } from "../dist/runner/runner-factory.js";
-import { OpencodeApiClient } from "../dist/services/opencode-api-client.js";
-import { OpencodeProcessManager } from "../dist/services/opencode-process-manager.js";
+import { OpencodeRunner } from "../dist/runner/opencode-runner.js";
+import { OpencodeSdkClient } from "../dist/services/opencode-sdk-client.js";
+import { OpencodeProcessManager, writeOpencodeConfig } from "../dist/services/opencode-process-manager.js";
 import { DisabledLangfuseSink } from "../dist/services/langfuse-sink.js";
 import { redactSecrets } from "../dist/utils/redact.js";
 
@@ -52,21 +53,20 @@ test("redacts common secrets from logs", () => {
   assert.doesNotMatch(text, /x:y/);
 });
 
-test("opencode api client talks to fake server", async () => {
+test("opencode sdk client talks to fake server", async () => {
   const fakeFetch = createFakeFetch();
-  const client = new OpencodeApiClient({ baseUrl: "http://fake-opencode.local", fetch: fakeFetch.fetch });
+  const client = new OpencodeSdkClient({ baseUrl: "http://fake-opencode.local", fetch: fakeFetch.fetch });
   const health = await client.health();
   const doc = await client.docSummary();
   const session = await client.createSession(validateJob(sampleJob({ agent: { mode: "opencode-api" } })));
   const events = await client.sendPrompt(session.id, validateJob(sampleJob({ agent: { mode: "opencode-api" } })));
 
   assert.equal(health.healthy, true);
-  assert.equal(doc.pathCount, 4);
+  assert.equal(doc.pathCount, 3);
   assert.equal(session.id, "ses_fake_001");
   assert.equal(events.at(-1).type, "assistant_final");
   assert.deepEqual(fakeFetch.requests.map((request) => request.pathname), [
-    "/global/health",
-    "/doc",
+    "/config",
     "/session",
     "/session/ses_fake_001/message",
   ]);
@@ -80,6 +80,134 @@ test("opencode api client talks to fake server", async () => {
       text: "Echo this prompt for now.",
     },
   ]);
+});
+
+test("opencode message request uses job timeout instead of short API default", async () => {
+  const client = new OpencodeSdkClient({
+    baseUrl: "http://fake-opencode.local",
+    fetch: async (request) => {
+      await sleepWithAbort(25, request.signal);
+      return response({
+        info: assistantInfo("ses_slow_001"),
+        parts: [
+          { type: "text", text: "completed after default timeout" },
+        ],
+      });
+    },
+  });
+  const job = validateJob(sampleJob({
+    agent: {
+      mode: "opencode-api",
+      model: "local/fake",
+      timeoutSeconds: 1,
+    },
+  }));
+
+  const events = await client.sendPrompt("ses_slow_001", job);
+
+  assert.equal(events.at(-1).message, "completed after default timeout");
+});
+
+test("opencode sdk client reports fetch failure causes", async () => {
+  const client = new OpencodeSdkClient({
+    baseUrl: "http://fake-opencode.local",
+    fetch: async () => {
+      throw Object.assign(new TypeError("fetch failed"), {
+        cause: { code: "UND_ERR_SOCKET" },
+      });
+    },
+  });
+
+  await assert.rejects(
+    () => client.health(),
+    /opencode SDK request failed for \/config: fetch failed: UND_ERR_SOCKET/,
+  );
+});
+
+test("opencode runner fails fast on interactive permission prompts", async () => {
+  const runner = new OpencodeRunner({
+    dependencies: {
+      processManager: {
+        async start() {
+          return {
+            baseUrl: "http://127.0.0.1:9999",
+            permissionPrompt: Promise.resolve(new Error("opencode requested interactive permission: external_directory")),
+            stop: async () => {},
+          };
+        },
+      },
+      apiClient: {
+        async health() {
+          return { healthy: true, version: "fake-version" };
+        },
+        async docSummary() {
+          return { pathCount: 3 };
+        },
+        async createSession() {
+          return { id: "ses_permission_001" };
+        },
+        async sendPrompt() {
+          return await new Promise(() => {});
+        },
+      },
+      langfuseSink: new DisabledLangfuseSink(),
+    },
+  });
+
+  await assert.rejects(
+    () => runner.run(validateJob(sampleJob({
+      agent: {
+        mode: "opencode",
+        model: "local/fake",
+      },
+    }))),
+    /opencode requested interactive permission/,
+  );
+});
+
+test("opencode runner reports server exit during prompt", async () => {
+  const runner = new OpencodeRunner({
+    dependencies: {
+      processManager: {
+        async start() {
+          return {
+            baseUrl: "http://127.0.0.1:9999",
+            exited: Promise.resolve(new Error([
+              "opencode serve exited unexpectedly with code 1.",
+              "Recent opencode output:",
+              "opencode_stderr: missing provider credentials",
+            ].join("\n"))),
+            stop: async () => {},
+          };
+        },
+      },
+      apiClient: {
+        async health() {
+          return { healthy: true, version: "fake-version" };
+        },
+        async docSummary() {
+          return { pathCount: 3 };
+        },
+        async createSession() {
+          return { id: "ses_exit_001" };
+        },
+        async sendPrompt() {
+          return await new Promise(() => {});
+        },
+      },
+      langfuseSink: new DisabledLangfuseSink(),
+    },
+  });
+
+  await assert.rejects(
+    () => runner.run(validateJob(sampleJob({
+      agent: {
+        mode: "opencode",
+        model: "local/fake",
+      },
+    }))),
+    /opencode serve exited unexpectedly with code 1[\s\S]*missing provider credentials/,
+  );
 });
 
 test("worker opencode-api mode persists fake api events and metadata", async () => {
@@ -102,7 +230,7 @@ test("worker opencode-api mode persists fake api events and metadata", async () 
     },
   }));
   const fakeFetch = createFakeFetch();
-  const apiClient = new OpencodeApiClient({
+  const apiClient = new OpencodeSdkClient({
     baseUrl: "http://fake-opencode.local",
     fetch: fakeFetch.fetch,
   });
@@ -205,39 +333,62 @@ test("opencode process manager builds a writable local serve environment", async
   assert.match(launch.env.XDG_CONFIG_HOME, /workspace/);
 });
 
+test("opencode process manager writes noninteractive permission config", async () => {
+  const storeDir = await tempDir();
+  const configRoot = path.join(storeDir, "config");
+
+  await writeOpencodeConfig(configRoot);
+
+  const config = await readJson(path.join(configRoot, "opencode", "opencode.json"));
+  assert.equal(config.permission, "allow");
+});
+
+test("opencode process manager enables Langfuse plugin when credentials exist", async () => {
+  const storeDir = await tempDir();
+  const configRoot = path.join(storeDir, "config");
+
+  await writeOpencodeConfig(configRoot, {
+    LANGFUSE_PUBLIC_KEY: "pk-lf-test",
+    LANGFUSE_SECRET_KEY: "sk-lf-test",
+  });
+
+  const config = await readJson(path.join(configRoot, "opencode", "opencode.json"));
+  assert.equal(config.permission, "allow");
+  assert.equal(config.experimental.openTelemetry, true);
+  assert.deepEqual(config.plugin, ["opencode-plugin-langfuse"]);
+});
+
 function createFakeFetch() {
   const requests = [];
-  const fakeFetch = async (input, options = {}) => {
-    const url = new URL(String(input));
+  const fakeFetch = async (request) => {
+    const url = new URL(request.url);
+    const text = request.method === "GET" ? "" : await request.text();
     requests.push({
-      method: options.method || "GET",
+      method: request.method,
       pathname: url.pathname,
-      body: options.body ? JSON.parse(options.body) : null,
+      body: text ? JSON.parse(text) : null,
     });
 
-    if (url.pathname === "/global/health") {
-      return response({ healthy: true, version: "fake-opencode" });
-    }
-    if (url.pathname === "/doc") {
-      return response({
-        info: { title: "opencode", version: "fake" },
-        paths: {
-          "/doc": {},
-          "/global/health": {},
-          "/session": {},
-          "/session/{sessionID}/message": {},
-        },
-      });
+    if (url.pathname === "/config") {
+      return response({ model: "local/echo", version: "fake-opencode" });
     }
     if (url.pathname === "/session") {
       return response({ id: "ses_fake_001" });
     }
     if (url.pathname === "/session/ses_fake_001/message") {
       return response({
-        events: [
-          { type: "assistant_delta", message: "Working" },
-          { type: "tool_completed", name: "fake-tool", message: "done" },
-          { type: "assistant_final", message: "Fake opencode result" },
+        info: assistantInfo("ses_fake_001"),
+        parts: [
+          {
+            type: "tool",
+            tool: "fake-tool",
+            state: {
+              status: "completed",
+              output: "done",
+              title: "fake-tool",
+            },
+          },
+          { type: "text", text: "Fake opencode result" },
         ],
       });
     }
@@ -301,9 +452,43 @@ function sampleJob(overrides = {}) {
 }
 
 function response(value, status = 200) {
-  return {
-    ok: status >= 200 && status < 300,
+  return new Response(JSON.stringify(value), {
     status,
-    text: async () => JSON.stringify(value),
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+}
+
+function assistantInfo(sessionID) {
+  return {
+    id: "msg_fake_001",
+    sessionID,
+    role: "assistant",
+    time: { created: Date.now(), completed: Date.now() },
+    parentID: "msg_user_001",
+    modelID: "echo",
+    providerID: "local",
+    mode: "build",
+    path: { cwd: "/tmp", root: "/tmp" },
+    cost: 0,
+    tokens: {
+      input: 0,
+      output: 0,
+      reasoning: 0,
+      cache: { read: 0, write: 0 },
+    },
+    finish: "stop",
   };
+}
+
+function sleepWithAbort(ms, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(signal.reason);
+    const timer = setTimeout(resolve, ms);
+    signal?.addEventListener("abort", () => {
+      clearTimeout(timer);
+      reject(signal.reason);
+    }, { once: true });
+  });
 }

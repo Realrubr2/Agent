@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { OpencodeApiClient } from "./opencode-api-client.js";
+import { OpencodeSdkClient } from "./opencode-sdk-client.js";
 import { redactSecrets } from "../utils/redact.js";
 
 export class OpencodeProcessManager {
@@ -19,8 +19,18 @@ export class OpencodeProcessManager {
       fs.mkdir(launch.config, { recursive: true }),
       fs.mkdir(launch.workspaceDir, { recursive: true }),
     ]);
+    await writeOpencodeConfig(launch.config, this.env);
 
     await this.append(job, launch.attempt, "opencode_server_starting", `${launch.command} ${launch.args.join(" ")}`);
+    let resolvePermissionPrompt;
+    const permissionPrompt = new Promise((resolve) => {
+      resolvePermissionPrompt = resolve;
+    });
+    let resolveExited;
+    const exited = new Promise((resolve) => {
+      resolveExited = resolve;
+    });
+    const recentOutput = [];
     const child = spawn(launch.command, launch.args, {
       cwd: launch.workspaceDir,
       env: launch.env,
@@ -30,21 +40,26 @@ export class OpencodeProcessManager {
     child.stdout.setEncoding("utf8");
     child.stderr.setEncoding("utf8");
     child.stdout.on("data", (chunk) => {
-      this.append(job, launch.attempt, "opencode_stdout", chunk.toString().trim()).catch(() => {});
+      recordOutput(this, job, launch.attempt, recentOutput, "opencode_stdout", chunk.toString());
     });
     child.stderr.on("data", (chunk) => {
-      this.append(job, launch.attempt, "opencode_stderr", chunk.toString().trim()).catch(() => {});
+      const text = chunk.toString().trim();
+      recordOutput(this, job, launch.attempt, recentOutput, "opencode_stderr", text);
+      if (isPermissionPrompt(text)) {
+        resolvePermissionPrompt(new Error(`opencode requested interactive permission: ${summarizePermission(text)}`));
+      }
     });
 
     let exitError;
     child.once("exit", (code, signal) => {
-      if (code !== 0 && code !== null) exitError = new Error(`opencode serve exited with code ${code}`);
-      if (signal) exitError = new Error(`opencode serve exited from signal ${signal}`);
+      exitError = opencodeExitError(code, signal, recentOutput);
+      resolveExited(exitError);
     });
 
-    const client = new OpencodeApiClient({
+    const client = new OpencodeSdkClient({
       baseUrl: launch.baseUrl,
       password: job.agent.opencode.serverPassword,
+      directory: launch.workspaceDir,
     });
     await waitForReady(async () => {
       if (exitError) throw exitError;
@@ -55,6 +70,8 @@ export class OpencodeProcessManager {
       baseUrl: launch.baseUrl,
       pid: child.pid,
       workspaceDir: launch.workspaceDir,
+      permissionPrompt,
+      exited,
       stop: async () => {
         if (child.exitCode !== null || child.killed) return;
         child.kill("SIGTERM");
@@ -101,6 +118,7 @@ export class OpencodeProcessManager {
         HOME: home,
         XDG_DATA_HOME: data,
         XDG_CONFIG_HOME: config,
+        LANGFUSE_BASEURL: this.env.LANGFUSE_BASEURL || this.env.LANGFUSE_HOST || "https://cloud.langfuse.com",
       },
     };
   }
@@ -115,6 +133,50 @@ export class OpencodeProcessManager {
       message: redactSecrets(message),
     });
   }
+}
+
+function recordOutput(manager, job, attempt, recentOutput, type, value) {
+  const text = String(value || "").trim();
+  if (!text) return;
+  recentOutput.push({ type, text: redactSecrets(text) });
+  while (recentOutput.length > 20) recentOutput.shift();
+  manager.append(job, attempt, type, text).catch(() => {});
+}
+
+function opencodeExitError(code, signal, recentOutput) {
+  const status = signal ? `from signal ${signal}` : `with code ${code}`;
+  const output = recentOutput
+    .slice(-8)
+    .map((entry) => `${entry.type}: ${entry.text}`)
+    .join("\n");
+  const details = output ? `\nRecent opencode output:\n${output}` : "";
+  return new Error(`opencode serve exited unexpectedly ${status}.${details}`);
+}
+
+function isPermissionPrompt(value) {
+  return String(value).includes("permission.asked") || /service=permission[\s\S]*\basking\b/.test(String(value));
+}
+
+function summarizePermission(value) {
+  const text = String(value).replace(/\s+/g, " ").trim();
+  return text.slice(0, 500);
+}
+
+export async function writeOpencodeConfig(configRoot, env = process.env) {
+  const configDir = path.join(configRoot, "opencode");
+  const config = {
+    "$schema": "https://opencode.ai/config.json",
+    permission: "allow",
+  };
+  if (env.LANGFUSE_PUBLIC_KEY && env.LANGFUSE_SECRET_KEY) {
+    config.experimental = {
+      openTelemetry: true,
+    };
+    config.plugin = ["opencode-plugin-langfuse"];
+  }
+
+  await fs.mkdir(configDir, { recursive: true });
+  await fs.writeFile(path.join(configDir, "opencode.json"), `${JSON.stringify(config, null, 2)}\n`, "utf8");
 }
 
 async function waitForReady(check, timeoutSeconds = 30) {
