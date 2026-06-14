@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import http from "node:http";
 import { parseCommand, eventActor, eventAssociation, eventCommandSource, isPullRequestEvent, isTrustedAssociation } from "./commands.js";
-import { extractLatestPlan, buildWorkerJob } from "./jobs.js";
+import { extractLatestPlan, buildWorkerJob, planMarker } from "./jobs.js";
 
 const ORCHESTRATOR_COMMENT_MARKER = "<!-- agent-orchestrator -->";
 
@@ -102,6 +102,7 @@ export async function handleGitHubEvent({ eventName, payload, config, github, la
       `Agent ${command.action} worker finished with \`${result.status}\`.`,
       "",
       result.stdout ? fenced(result.stdout.slice(0, 4000)) : "",
+      command.action === "plan" ? planMarker(job) : "",
       result.stderr ? `stderr:\n${fenced(result.stderr.slice(0, 4000))}` : "",
     ].filter(Boolean).join("\n")));
     return { accepted: true, jobId: job.jobId, sessionId: job.sessionId, status: result.status };

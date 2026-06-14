@@ -70,6 +70,16 @@ test("opencode api client talks to fake server", async () => {
     "/session",
     "/session/ses_fake_001/message",
   ]);
+  assert.deepEqual(fakeFetch.requests.at(-1).body.model, {
+    providerID: "local",
+    modelID: "echo",
+  });
+  assert.deepEqual(fakeFetch.requests.at(-1).body.parts, [
+    {
+      type: "text",
+      text: "Echo this prompt for now.",
+    },
+  ]);
 });
 
 test("worker opencode-api mode persists fake api events and metadata", async () => {
@@ -199,7 +209,11 @@ function createFakeFetch() {
   const requests = [];
   const fakeFetch = async (input, options = {}) => {
     const url = new URL(String(input));
-    requests.push({ method: options.method || "GET", pathname: url.pathname });
+    requests.push({
+      method: options.method || "GET",
+      pathname: url.pathname,
+      body: options.body ? JSON.parse(options.body) : null,
+    });
 
     if (url.pathname === "/global/health") {
       return response({ healthy: true, version: "fake-opencode" });

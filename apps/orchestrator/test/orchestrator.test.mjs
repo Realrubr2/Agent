@@ -81,6 +81,32 @@ test("buildWorkerJob creates normalized worker input", async () => {
   assert.match(job.prompt, /planning phase/);
 });
 
+test("buildWorkerJob uses openrouter for plan and opencode for implementation by default", async () => {
+  const payload = await samplePayload();
+  const config = loadConfig({
+    ORCHESTRATOR_AGENT_MODE: "openrouter",
+    ORCHESTRATOR_AGENT_MODEL: "openrouter/z-ai/glm-4.7-flash",
+    AGENT_ALLOWED_ASSOCIATIONS: "OWNER",
+    ORCHESTRATOR_COMMAND_PREFIXES: "webhook-agent",
+  });
+  const planJob = buildWorkerJob({
+    event: payload,
+    command: parseCommand("/webhook-agent plan", config.commandPrefixes),
+    config,
+  });
+  const approveJob = buildWorkerJob({
+    event: await samplePayload({ comment: { body: "/webhook-agent approve" } }),
+    command: parseCommand("/webhook-agent approve", config.commandPrefixes),
+    config,
+    latestPlan: "Plan text",
+  });
+
+  assert.equal(planJob.agent.mode, "openrouter");
+  assert.equal(planJob.agent.model, "openrouter/z-ai/glm-4.7-flash");
+  assert.equal(approveJob.agent.mode, "opencode");
+  assert.equal(approveJob.agent.model, "openrouter/z-ai/glm-4.7-flash");
+});
+
 test("handleGitHubEvent launches worker for trusted plan command", async () => {
   const payload = await samplePayload();
   const github = new FakeGitHub();
@@ -108,6 +134,7 @@ test("handleGitHubEvent launches worker for trusted plan command", async () => {
   assert.match(github.createdComments[0].body, /request accepted/);
   assert.match(github.createdComments[0].body, /<!-- agent-orchestrator -->/);
   assert.match(github.createdComments[1].body, /worker finished/);
+  assert.match(github.createdComments[1].body, /<!-- agent-plan:/);
 });
 
 test("handleGitHubEvent ignores orchestrator comments", async () => {

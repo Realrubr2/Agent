@@ -38,8 +38,8 @@ Run the container with mounted persistence:
 docker run --rm \
   -e JOB_FILE=/input/job.json \
   -e AGENT_STORE_DIR=/data \
-  -v "$PWD/apps/worker/examples:/input" \
-  -v "$PWD/.tmp/agent-store:/data" \
+  -v "$PWD/apps/worker/examples:/input:Z" \
+  -v "$PWD/.tmp/agent-store:/data:Z" \
   agent-worker:local
 ```
 

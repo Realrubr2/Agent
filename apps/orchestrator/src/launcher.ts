@@ -41,10 +41,10 @@ export class WorkerLauncher {
       if (this.env[name]) args.push("-e", name);
     }
 
-    args.push("-v", `${this.config.workerStoreDir}:${this.config.containerStoreDir}`);
+    args.push("-v", this.volumeSpec(this.config.workerStoreDir, this.config.containerStoreDir));
 
     if (this.config.workerWorkspaceDir) {
-      args.push("-v", `${path.resolve(this.config.workerWorkspaceDir)}:${this.config.containerWorkspaceDir}`);
+      args.push("-v", this.volumeSpec(path.resolve(this.config.workerWorkspaceDir), this.config.containerWorkspaceDir));
       job.agent.workspaceDir = this.config.containerWorkspaceDir;
     }
 
@@ -54,6 +54,10 @@ export class WorkerLauncher {
       cwd: this.repoRoot,
       env: this.workerEnv(job),
     });
+  }
+
+  volumeSpec(hostPath, containerPath) {
+    return `${hostPath}:${containerPath}${this.config.dockerVolumeSuffix || ""}`;
   }
 
   workerEnv(job) {

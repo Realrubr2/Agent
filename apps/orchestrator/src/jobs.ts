@@ -19,6 +19,8 @@ export function buildWorkerJob({ event, command, config, latestPlan = "" }) {
   const id = idFrom(seed).slice(0, 12);
   const sessionId = sessionIdFor(repository.full_name, issueOrPrNumber, command.action);
 
+  const agentSettings = agentSettingsForAction(config, command.action);
+
   return {
     jobId: `job_${command.action}_${id}`,
     sessionId,
@@ -41,8 +43,8 @@ export function buildWorkerJob({ event, command, config, latestPlan = "" }) {
       triggerText: event.comment?.body || issue.body || "",
     },
     agent: {
-      mode: config.agentMode,
-      model: config.agentModel,
+      mode: agentSettings.mode,
+      model: agentSettings.model,
       agentName: config.agentName,
       timeoutSeconds: config.opencodeTimeoutSeconds,
       workspaceDir: config.workerWorkspaceDir || null,
@@ -57,6 +59,27 @@ export function buildWorkerJob({ event, command, config, latestPlan = "" }) {
       },
     },
   };
+}
+
+function agentSettingsForAction(config, action) {
+  if (action === "plan") {
+    return {
+      mode: config.planAgentMode || config.agentMode,
+      model: config.planAgentModel || config.agentModel,
+    };
+  }
+
+  return {
+    mode: config.implementationAgentMode || config.agentMode,
+    model: config.implementationAgentModel || config.agentModel,
+  };
+}
+
+export function planMarker(job) {
+  return `${PLAN_MARKER}${JSON.stringify({
+    job_id: job.jobId,
+    session_id: job.sessionId,
+  })} -->`;
 }
 
 export function buildPrompt({ event, command, latestPlan = "" }) {

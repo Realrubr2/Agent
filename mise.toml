@@ -69,6 +69,12 @@ description = "Run the webhook orchestrator locally."
 depends = ["orchestrator:build"]
 run = "node apps/orchestrator/dist/main.js"
 
+[tasks."orchestrator:webhook"]
+description = "Run the local GitHub webhook orchestrator with project defaults."
+depends = ["orchestrator:build"]
+env = { ORCHESTRATOR_HOST = "0.0.0.0", ORCHESTRATOR_COMMAND_PREFIXES = "webhook-agent", ORCHESTRATOR_DOCKER_VOLUME_SUFFIX = ":Z", ORCHESTRATOR_WORKER_LAUNCH_MODE = "docker", ORCHESTRATOR_AGENT_MODE = "openrouter", ORCHESTRATOR_AGENT_MODEL = "openrouter/z-ai/glm-4.7-flash", GITHUB_WEBHOOK_SECRET = "local-secret", ORCHESTRATOR_REPOSITORIES = "Realrubr2/motomoto" }
+run = "node apps/orchestrator/dist/main.js"
+
 [tasks."orchestrator:test"]
 description = "Run webhook orchestrator tests."
 depends = ["orchestrator:build"]

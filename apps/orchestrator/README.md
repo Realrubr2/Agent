@@ -11,18 +11,17 @@ mise run orchestrator:build
 mise run worker:build
 ```
 
-Start the orchestrator in local dry-run mode:
+Start the orchestrator with the local webhook defaults:
 
 ```bash
-ORCHESTRATOR_COMMAND_PREFIXES=webhook-agent \
-ORCHESTRATOR_WORKER_LAUNCH_MODE=dry-run \
-ORCHESTRATOR_GITHUB_DRY_RUN=1 \
-GITHUB_WEBHOOK_SECRET=local-secret \
-ORCHESTRATOR_REPOSITORIES=realrubr2/Server \
-mise run orchestrator:dev
+GITHUB_TOKEN="<BOT_ACCOUNT_PAT>" \
+OPENROUTER_API_KEY="<YOUR_OPENROUTER_KEY>" \
+mise run orchestrator:webhook
 ```
 
-Then trigger this local webhook path with `/webhook-agent plan`, `/webhook-agent approve`, or `/webhook-agent improve ...`. The default prefixes are `/agent` and `/opencode`, but a custom prefix avoids conflicts when existing GitHub Actions already listen for those commands.
+The `orchestrator:webhook` task sets the non-secret local defaults: host `0.0.0.0`, command prefix `webhook-agent`, Docker worker mode, OpenRouter planning, opencode implementation, SELinux Docker volume suffix `:Z`, webhook secret `local-secret`, and repository allowlist `Realrubr2/motomoto`.
+
+Then trigger this local webhook path with `/webhook-agent plan`, `/webhook-agent approve`, or `/webhook-agent improve ...`. The custom prefix avoids conflicts when existing GitHub Actions already listen for `/agent` or `/opencode`.
 
 Send the sample webhook:
 
@@ -49,11 +48,9 @@ Docker mode:
 ```bash
 mise run worker:docker:build
 
-ORCHESTRATOR_WORKER_LAUNCH_MODE=docker \
-ORCHESTRATOR_GITHUB_DRY_RUN=1 \
-GITHUB_WEBHOOK_SECRET=local-secret \
-ORCHESTRATOR_REPOSITORIES=realrubr2/Server \
-mise run orchestrator:dev
+GITHUB_TOKEN="<BOT_ACCOUNT_PAT>" \
+OPENROUTER_API_KEY="<YOUR_OPENROUTER_KEY>" \
+mise run orchestrator:webhook
 ```
 
 ## GitHub Configuration
@@ -64,6 +61,7 @@ For a real webhook receiver, set:
 - `GITHUB_TOKEN` or `GH_TOKEN` with permission to comment on issues and PRs.
 - `ORCHESTRATOR_REPOSITORIES` to a comma-separated allowlist, for example `realrubr2/Server`.
 - `ORCHESTRATOR_COMMAND_PREFIXES` to a comma-separated command allowlist, for example `webhook-agent`.
+- `ORCHESTRATOR_DOCKER_VOLUME_SUFFIX` optional Docker volume suffix. Use `:Z` on SELinux systems if worker containers cannot write to `/data`.
 - `AGENT_ALLOWED_ASSOCIATIONS`, default `OWNER,MEMBER,COLLABORATOR`.
 - `ORCHESTRATOR_AGENT_MODE`, default `echo`.
 - `ORCHESTRATOR_AGENT_MODEL`, default `local/echo`.

@@ -37,7 +37,12 @@ export class OpencodeApiClient {
 
   async sendPrompt(sessionId, job) {
     const response = await this.postJson(`/session/${encodeURIComponent(sessionId)}/message`, {
-      text: job.prompt,
+      parts: [
+        {
+          type: "text",
+          text: job.prompt,
+        },
+      ],
       model: modelPayload(job.agent.model),
       agent: job.agent.agentName,
     }, {
@@ -119,6 +124,6 @@ function modelPayload(model) {
   const [providerID, ...rest] = model.split("/");
   return {
     providerID,
-    id: rest.join("/"),
+    modelID: rest.join("/"),
   };
 }
